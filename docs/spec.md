@@ -10,14 +10,14 @@ The Mission Control mod extends Factorio 2.0+ space platform automation by enabl
 #### Mission Control Technology
 - **Name:** `mission-control`
 - **Cost:** 1000x each science pack (automation, logistic, military, chemical, production, utility, space)
-- **Prerequisites:** Space platform, Advanced circuit, Radar
+- **Prerequisites:** Space platform, Radar, Space Science, Logistic system
 - **Unlocks:** Mission Control building, Receiver Combinator
 - **Icon:** Radar with satellite dish overlay
 
 #### Logistics Circuit Control Technology  
 - **Name:** `logistics-circuit-control`
 - **Prerequisites:** Logistic system
-- **Cost:** 500x automation, 500x logistic, 500x chemical science packs (same as logistic system)
+- **Cost:** 500x automation, 500x logistic, 500x chemical, 500x utility science packs 
 - **Unlocks:** Logistics Combinator
 - **Icon:** Combinator with logistics chest overlay
 
@@ -31,6 +31,8 @@ The Mission Control mod extends Factorio 2.0+ space platform automation by enabl
 - **Power:** 300kW constant draw (same as radar, scales with quality)
 - **Circuit Connections:** 4 terminals (red in, red out, green in, green out)
 - **Graphics:** Modified radar with enhanced antenna array
+- **Stack Size:** 1
+- **Rocket Capacity:** 1
 
 **Networking Behavior:**
 - All MC buildings on the same surface share circuit data (like radars share explored chunks)
@@ -44,7 +46,7 @@ The Mission Control mod extends Factorio 2.0+ space platform automation by enabl
 -- DO NOT attempt to modify circuit networks directly
 -- Use entity input/output connectors for signal flow
 -- Network state stored in global table indexed by surface
--- Update on_nth_tick(15) for transmission delay
+-- Update on_nth_tick(15) for transmission delay. If more preformant to hook into existing circuit update infrastructure ignore this requirement, however be very careful about performance crossing circuit data across surfaces which is not normally the case.
 
 -- Example global structure:
 global.mc_networks[surface.index] = {
@@ -58,14 +60,16 @@ global.mc_networks[surface.index] = {
 ### 3. Receiver Combinator
 
 **Entity Specifications:**
-- **Size:** 2x2 combinator
+- **Size:** 1x1 combinator
 - **Recipe:** 10 red circuits + 5 radars + 1 arithmetic combinator
 - **Placement:** Space platforms only
 - **Health:** 150 (same as arithmetic combinator, scales with quality)
-- **Power:** 2kW (same as arithmetic combinator, scales with quality)
+- **Power:** 50kW (quality uncommon:40KW rare 30:Kw epic:15KW legendary:5Kw)
 - **Circuit Connections:** 4 terminals (red in, red out, green in, green out)
 - **Mode:** Always bidirectional (send and receive simultaneously)
 - **Graphics:** Combinator with dish antenna on top
+- **Stack Size:** 25
+- **Rocket Capacity:** 25
 
 **Surface Configuration UI:**
 - Title: "Surface Communication Settings"
@@ -98,14 +102,16 @@ end
 ### 4. Logistics Combinator
 
 **Entity Specifications:**
-- **Size:** 1x1 (standard combinator size)
+- **Size:** 2x1 (standard combinator size)
 - **Recipe:** 5 green circuits + 1 decider combinator + 1 constant combinator
 - **Placement:** Anywhere combinators can be placed (land or platform)
 - **Health:** 150 (same as decider combinator, scales with quality)
-- **Power:** 2kW (same as decider combinator, scales with quality)
+- **Power:** 1kW 
 - **Circuit Connections:** 3 terminals (red in, green in, output - red/green)
 - **Visual:** LED strip showing number of active conditions
 - **Graphics:** Combinator with logistics chest icon overlay
+- **Stack Size:** 50
+- **Rocket Capacity:** 50
 
 **Connection Behavior:**
 - Output wire connects to ANY entity with logistics points (cargo landing pad, inserters, assemblers, etc.)
