@@ -9,7 +9,7 @@
 -- ==============================================================================
 
 local globals = require("scripts.globals")
-local logistics_combinator = require("scripts.logistics_combinator")
+local logistics_combinator = require("scripts.logistics_combinator.init")
 local gui_handlers = require("scripts.gui_handlers")
 
 -- ==============================================================================

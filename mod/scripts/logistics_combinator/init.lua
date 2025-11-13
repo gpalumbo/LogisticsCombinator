@@ -1,5 +1,5 @@
--- logistics_combinator.lua
--- Mission Control Mod - Logistics Combinator Control Logic
+-- init.lua
+-- Mission Control Mod - Logistics Combinator Module
 --
 -- PURPOSE:
 -- Business logic for logistics combinators: rule processing, entity tracking,
@@ -14,7 +14,7 @@
 --
 -- DOES NOT OWN:
 -- - Low-level logistics operations (that's lib/logistics_utils)
--- - GUI creation (that's scripts/gui_handlers)
+-- - GUI creation (that's scripts/logistics_combinator/gui)
 -- - Condition evaluation algorithm (that's lib/gui_utils)
 -- - Global state storage (that's scripts/globals)
 
@@ -27,6 +27,9 @@ local gui_utils = require("lib.gui_utils")
 local circuit_utils = require("lib.circuit_utils")
 local signal_utils = require("lib.signal_utils")
 
+-- GUI module will be loaded lazily to avoid circular dependencies
+local logistics_gui = nil
+
 -- ==============================================================================
 -- ENTITY LIFECYCLE
 -- ==============================================================================
@@ -38,16 +41,23 @@ function logistics_combinator.on_built(entity, player)
   if not entity or not entity.valid then return end
   if entity.name ~= "logistics-combinator" then return end
 
-  -- Register in global state
-  globals.register_logistics_combinator(entity)
+  -- Register in global state - initialize data structure
+  local unit_number = entity.unit_number
+  if not unit_number then return end
+
+  global.logistics_combinators = global.logistics_combinators or {}
+  global.logistics_combinators[unit_number] = {
+    entity_unit_number = unit_number,
+    rules = {},
+    connected_entities = {}
+  }
 
   -- Initialize connected entities cache
-  logistics_combinator.update_connected_entities(entity.unit_number)
+  logistics_combinator.update_connected_entities(unit_number)
 
-  log("Logistics combinator built: " .. entity.unit_number)
+  log("Logistics combinator built: " .. unit_number)
 
-  -- Open GUI for player (if player exists)
-  -- Note: GUI opening will be handled by on_gui_opened event
+  -- GUI opening will be handled by on_gui_opened event
 end
 
 --- Handle logistics combinator removed event
@@ -62,7 +72,25 @@ function logistics_combinator.on_removed(entity)
   logistics_combinator.cleanup_all_injected_groups(unit_number)
 
   -- Unregister from global state
-  globals.unregister_logistics_combinator(unit_number)
+  if global.logistics_combinators then
+    global.logistics_combinators[unit_number] = nil
+  end
+
+  -- Clean up injected groups tracking
+  if global.injected_groups then
+    for entity_id, sections in pairs(global.injected_groups) do
+      for section_idx, comb_id in pairs(sections) do
+        if comb_id == unit_number then
+          sections[section_idx] = nil
+        end
+      end
+
+      -- Clean up empty entity entries
+      if not next(sections) then
+        global.injected_groups[entity_id] = nil
+      end
+    end
+  end
 
   log("Logistics combinator removed: " .. unit_number)
 end
@@ -75,7 +103,8 @@ end
 -- Uses Factorio's circuit_connected_entities API to find entities on output network
 -- @param unit_number number: Combinator unit_number
 function logistics_combinator.update_connected_entities(unit_number)
-  local combinator_data = globals.get_logistics_combinator(unit_number)
+  if not global.logistics_combinators then return end
+  local combinator_data = global.logistics_combinators[unit_number]
   if not combinator_data then return end
 
   -- Get the entity
@@ -95,7 +124,7 @@ function logistics_combinator.update_connected_entities(unit_number)
   end
 
   if not entity or not entity.valid then
-    globals.set_connected_entities(unit_number, {})
+    combinator_data.connected_entities = {}
     return
   end
 
@@ -103,7 +132,7 @@ function logistics_combinator.update_connected_entities(unit_number)
   local connected = entity.circuit_connected_entities
 
   if not connected then
-    globals.set_connected_entities(unit_number, {})
+    combinator_data.connected_entities = {}
     return
   end
 
@@ -128,8 +157,8 @@ function logistics_combinator.update_connected_entities(unit_number)
     table.insert(entities_array, unit_num)
   end
 
-  -- Cache in global
-  globals.set_connected_entities(unit_number, entities_array)
+  -- Cache in combinator data
+  combinator_data.connected_entities = entities_array
 
   log("Updated connected entities for combinator " .. unit_number .. ": " .. #entities_array .. " entities")
 end
@@ -143,7 +172,8 @@ end
 -- Implements edge-triggered behavior: only act on condition state changes
 -- @param unit_number number: Combinator unit_number
 function logistics_combinator.process_rules(unit_number)
-  local combinator_data = globals.get_logistics_combinator(unit_number)
+  if not global.logistics_combinators then return end
+  local combinator_data = global.logistics_combinators[unit_number]
   if not combinator_data then return end
 
   -- Get the combinator entity
@@ -179,7 +209,7 @@ function logistics_combinator.process_rules(unit_number)
   end
 
   -- Get connected entities
-  local connected_entity_ids = globals.get_connected_entities(unit_number)
+  local connected_entity_ids = combinator_data.connected_entities or {}
 
   -- Process each rule
   for rule_idx, rule in ipairs(combinator_data.rules) do
@@ -238,7 +268,10 @@ function logistics_combinator.execute_rule(rule, connected_entity_ids, combinato
 
           if new_section_idx then
             -- Track the injection
-            globals.track_injected_group(entity_id, new_section_idx, combinator_unit_number)
+            global.injected_groups = global.injected_groups or {}
+            global.injected_groups[entity_id] = global.injected_groups[entity_id] or {}
+            global.injected_groups[entity_id][new_section_idx] = combinator_unit_number
+
             log("Injected group '" .. rule.group_name .. "' into entity " .. entity_id .. " at section " .. new_section_idx)
           else
             log("Failed to inject group: " .. tostring(err))
@@ -247,7 +280,7 @@ function logistics_combinator.execute_rule(rule, connected_entity_ids, combinato
 
       elseif rule.action == "remove" then
         -- Remove the group (only if injected by this combinator)
-        local tracking = globals.get_injected_groups(entity_id)
+        local tracking = (global.injected_groups and global.injected_groups[entity_id]) or {}
         local removed, count = logistics_utils.remove_logistics_group(
           entity,
           rule.group_name,
