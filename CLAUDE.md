@@ -1,8 +1,13 @@
 Creating a FACTORIO mod called mission-control.
 
 Requirements for the mod are @docs/spec.md
-Maintain currect activity in @docs/todo.md 
+Maintain currect activity in @docs/todo.md
 Code snippets defined when considering feasibilty options are in @docs/implmentation_hints.md, When planning you need to look at these and take them into consideration.
+
+**🚨 CRITICAL: Module Responsibility Matrix 🚨**
+Before writing ANY code, consult @docs/module_responsibility_matrix.md
+This defines EXACTLY where each function belongs (lib/ vs scripts/, which module).
+Use the decision tree to determine correct placement for new functions.
 
 ## File Structure
 ```

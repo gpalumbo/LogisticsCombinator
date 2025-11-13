@@ -10,6 +10,7 @@
 - [x] Create todo.md (this file)
 - [x] Plan shared library structure
 - [x] Plan target file organization
+- [x] Create module_responsibility_matrix.md (defines module boundaries)
 
 ---
 
@@ -544,6 +545,18 @@
 ---
 
 ## Development Guidelines
+
+### Module Responsibilities (CRITICAL - READ FIRST!)
+**📖 Before writing ANY code, consult `docs/module_responsibility_matrix.md`**
+
+This document defines:
+- What each module OWNS and DOESN'T OWN
+- Decision criteria for where new functions belong
+- Examples of correct/incorrect placement
+- Anti-patterns to avoid
+- Dependency rules
+
+**When adding a new function, use the decision tree in the matrix to determine correct placement.**
 
 ### Code Organization
 - Keep individual .lua files under 750-900 lines
