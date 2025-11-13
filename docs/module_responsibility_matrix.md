@@ -138,9 +138,18 @@ function register_receiver(entity)                 -- State storage → scripts/
 
 ---
 
-### lib/validation.lua
+### lib/validation.lua ⚠️ **DEPRECATED - OPTIONAL MODULE**
 
-**OWNS:**
+**⚠️ ARCHITECTURAL NOTE:** This module is **SUPERSEDED** by Factorio's native `TileBuildabilityRule` system (see `docs/tile_buildability_approach.md`). Tile buildability rules are defined in entity prototypes and provide superior performance, game integration, and simplicity.
+
+**RECOMMENDED APPROACH:**
+- Mission Control: Use `colliding_tiles = {"space-platform-foundation"}` in prototype
+- Receiver Combinator: Use `required_tiles = {"space-platform-foundation"}` in prototype
+- Logistics Combinator: No restrictions needed
+
+**Current Status:** Module implemented but NOT imported by any scripts. Retained only for reference or optional custom error messages.
+
+**ORIGINALLY OWNED (NOW HANDLED BY TILE RULES):**
 - Entity placement validation (planet-only, platform-only)
 - Placement error messages
 - Entity refund logic
@@ -153,15 +162,15 @@ function register_receiver(entity)                 -- State storage → scripts/
 - Rule/configuration validation (that's entity scripts)
 - General error handling
 
-**Decision Criteria:**
-- ✅ "Is this about whether an entity CAN be placed?" → validation
-- ✅ "Does this provide user feedback for placement errors?" → validation
+**Decision Criteria (IF CUSTOM MESSAGES NEEDED):**
+- ✅ "Is this about providing enhanced error feedback?" → validation (optional)
+- ❌ "Is this about primary placement enforcement?" → Use tile_buildability_rules
 - ❌ "Is this about what happens AFTER successful placement?" → scripts/
 - ❌ "Is this about runtime behavior validation?" → entity scripts
 
 **Examples:**
 ```lua
--- ✅ BELONGS HERE
+-- ✅ BELONGS HERE (if module is used)
 function validate_mission_control_placement(entity, player)
 function validate_receiver_placement(entity, player)
 function refund_entity(entity, player, inventory)
@@ -172,6 +181,8 @@ function register_mc_building(entity)              -- Post-placement → scripts
 function validate_rule_condition(rule)             -- Runtime validation → scripts/logistics_combinator
 function check_circuit_connection(entity)          -- Circuit check → circuit_utils
 ```
+
+**NOTE:** In Phase 2+ implementation, tile_buildability_rules should be used instead of importing this module.
 
 ---
 

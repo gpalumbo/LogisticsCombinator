@@ -1,9 +1,29 @@
 -- validation.lua
 -- Entity placement validation and player feedback
+--
+-- ⚠️ ARCHITECTURAL NOTE (2025-11-13): SUPERSEDED BY TileBuildabilityRule ⚠️
+--
+-- This module is now OPTIONAL and NOT RECOMMENDED for primary placement validation.
+-- Factorio's native TileBuildabilityRule system (defined in entity prototypes) is
+-- superior for performance, game integration, and simplicity.
+--
+-- See: docs/tile_buildability_approach.md for full rationale
+--
+-- This module is retained ONLY for:
+--   - Optional custom error messages (future enhancement)
+--   - Reference implementation
+--   - Backward compatibility if needed
+--
+-- RECOMMENDED APPROACH:
+--   Use tile_buildability_rules in entity prototypes:
+--   - Mission Control: colliding_tiles = {"space-platform-foundation"}
+--   - Receiver: required_tiles = {"space-platform-foundation"}
+--   - Logistics Combinator: no restrictions
+--
 -- This module validates entity placement and provides user feedback for errors.
 -- It is a pure library module with NO global state access.
 --
--- Responsibilities:
+-- Original Responsibilities (NOW HANDLED BY TILE RULES):
 --   - Validate Mission Control placement (planet-only)
 --   - Validate Receiver Combinator placement (platform-only)
 --   - Validate Logistics Combinator placement (anywhere)

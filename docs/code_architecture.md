@@ -56,6 +56,67 @@ mod/
 
 ---
 
+## Placement Validation Strategy
+
+**IMPORTANT:** This mod uses Factorio's native **TileBuildabilityRule** system for entity placement restrictions instead of runtime Lua validation.
+
+### Tile Buildability Rules
+
+Defined in entity prototypes for native engine-level validation:
+
+**Mission Control Building (Planet-Only):**
+```lua
+-- prototypes/entity/mission_control.lua
+tile_buildability_rules = {
+  {
+    area = {{-2.4, -2.4}, {2.4, 2.4}},
+    colliding_tiles = {"space-platform-foundation"},
+    remove_on_collision = false
+  }
+}
+```
+Effect: Cannot be placed on space-platform-foundation tiles.
+
+**Receiver Combinator (Platform-Only):**
+```lua
+-- prototypes/entity/receiver_combinator.lua
+tile_buildability_rules = {
+  {
+    area = {{-0.9, -0.9}, {0.9, 0.9}},
+    required_tiles = {"space-platform-foundation"},
+    remove_on_collision = false
+  }
+}
+```
+Effect: Can ONLY be placed on space-platform-foundation tiles.
+
+**Logistics Combinator (Anywhere):**
+```lua
+-- prototypes/entity/logistics_combinator.lua
+-- No tile_buildability_rules = can be placed anywhere
+```
+
+### Why TileBuildabilityRule?
+
+**Performance:**
+- Zero Lua overhead (engine validates at placement time)
+- No event handlers needed
+- Instant visual feedback (red outline)
+
+**Game Integration:**
+- Blueprints respect rules automatically
+- Construction robots obey restrictions
+- Native Factorio UX (no custom error messages needed)
+
+**Code Simplicity:**
+- No refund logic required
+- No runtime validation checks
+- No global state tracking for placement
+
+**Note:** `lib/validation.lua` is retained for reference but is NOT used by the mod. See `docs/tile_buildability_approach.md` for full details.
+
+---
+
 ## Library Module Specifications
 
 ### 1. `lib/signal_utils.lua`
