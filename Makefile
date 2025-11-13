@@ -7,6 +7,10 @@ MOD_DIR := mod
 INFO_FILE := $(MOD_DIR)/info.json
 DIST_DIR := dist
 
+# Luacheck configuration
+LUACHECK := $(shell which luacheck 2>/dev/null)
+LUACHECK_CONFIG := .luacheckrc
+
 # Extract mod name and version from info.json
 MOD_NAME := $(shell grep -Po '"name":\s*"\K[^"]+' $(INFO_FILE))
 MOD_VERSION := $(shell grep -Po '"version":\s*"\K[^"]+' $(INFO_FILE))
@@ -30,7 +34,7 @@ FACTORIO_MODS_DIR ?= $(HOME)/.factorio/mods
 # Targets
 # -------
 
-.PHONY: all help clean package localdeploy install uninstall check
+.PHONY: all help clean package localdeploy install uninstall check lint lint-strict lint-install check-luacheck ci
 
 # Default target
 all: package
@@ -39,12 +43,22 @@ all: package
 help:
 	@echo "Mission Control Mod - Available targets:"
 	@echo ""
+	@echo "Build & Deploy:"
 	@echo "  make package      - Create distributable mod package in dist/"
 	@echo "  make localdeploy  - Deploy mod to local Factorio mods directory"
 	@echo "  make install      - Alias for localdeploy"
 	@echo "  make uninstall    - Remove mod from local Factorio mods directory"
-	@echo "  make clean        - Remove build artifacts"
+	@echo ""
+	@echo "Quality & Testing:"
 	@echo "  make check        - Verify mod structure and info.json"
+	@echo "  make lint         - Run luacheck on mod code"
+	@echo "  make lint-strict  - Run luacheck with strict settings"
+	@echo "  make lint-install - Install luacheck via luarocks"
+	@echo "  make ci           - Run all checks (for CI/CD)"
+	@echo ""
+	@echo "Utilities:"
+	@echo "  make clean        - Remove build artifacts"
+	@echo "  make dev-info     - Show mod info and file structure"
 	@echo "  make help         - Show this help message"
 	@echo ""
 	@echo "Current configuration:"
@@ -52,6 +66,7 @@ help:
 	@echo "  Mod version:      $(MOD_VERSION)"
 	@echo "  Package name:     $(MOD_FULL_NAME).zip"
 	@echo "  Factorio mods:    $(FACTORIO_MODS_DIR)"
+	@echo "  Luacheck:         $(if $(LUACHECK),✓ installed,✗ not found (run 'make lint-install'))"
 	@echo ""
 
 # Check mod structure and info.json
@@ -128,6 +143,62 @@ clean:
 	@echo "Cleaning build artifacts..."
 	@rm -rf $(DIST_DIR)
 	@echo "✓ Clean complete"
+
+# Linting and Quality Checks
+# ---------------------------
+
+# Check if luacheck is installed
+check-luacheck:
+	@if [ -z "$(LUACHECK)" ]; then \
+		echo "Error: luacheck not found!"; \
+		echo ""; \
+		echo "Install luacheck with one of:"; \
+		echo "  • make lint-install    (via luarocks)"; \
+		echo "  • luarocks install luacheck"; \
+		echo "  • apt install lua-check    (Debian/Ubuntu)"; \
+		echo "  • brew install luacheck    (macOS)"; \
+		echo ""; \
+		exit 1; \
+	fi
+
+# Run luacheck on mod code
+lint: check-luacheck
+	@echo "Running luacheck on mod code..."
+	@$(LUACHECK) $(MOD_DIR) --config $(LUACHECK_CONFIG)
+	@echo ""
+	@echo "✓ Lint check complete"
+
+# Run luacheck with strict settings (no ignores)
+lint-strict: check-luacheck
+	@echo "Running strict luacheck (all warnings enabled)..."
+	@$(LUACHECK) $(MOD_DIR) --config $(LUACHECK_CONFIG) --no-unused --no-redefined --no-unused-args
+	@echo ""
+	@echo "✓ Strict lint check complete"
+
+# Install luacheck via luarocks
+lint-install:
+	@echo "Installing luacheck via luarocks..."
+	@if ! which luarocks >/dev/null 2>&1; then \
+		echo "Error: luarocks not found!"; \
+		echo ""; \
+		echo "Please install luarocks first:"; \
+		echo "  • Debian/Ubuntu: apt install luarocks"; \
+		echo "  • macOS: brew install luarocks"; \
+		echo "  • Arch: pacman -S luarocks"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@luarocks install --local luacheck
+	@echo ""
+	@echo "✓ Luacheck installed"
+	@echo ""
+	@echo "Add to your PATH (if needed):"
+	@echo "  export PATH=\"\$$HOME/.luarocks/bin:\$$PATH\""
+
+# CI target - run all checks
+ci: check lint
+	@echo ""
+	@echo "✓ All CI checks passed"
 
 # Development helpers
 # --------------------
