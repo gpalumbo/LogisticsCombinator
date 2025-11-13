@@ -21,68 +21,25 @@
 
 local platform_utils = {}
 
----------------------------------------------------------------------------------------------------
--- PLATFORM DETECTION
----------------------------------------------------------------------------------------------------
+--[[
+  REMOVED FUNCTIONS: Platform detection wrappers
 
---- Check if a surface is a space platform
--- @param surface LuaSurface: Surface to check
--- @return boolean: True if surface is a platform, false otherwise
---
--- Usage:
---   if platform_utils.is_platform_surface(entity.surface) then
---     -- Entity is on a platform
---   end
---
--- Note: Returns false for regular planetary surfaces and nil input
-function platform_utils.is_platform_surface(surface)
-  if not surface or not surface.valid then
-    return false
-  end
+  The following functions were removed as they duplicate native Factorio API:
 
-  -- In Factorio 2.0, platforms have the .platform property
-  return surface.platform ~= nil
-end
+  1. is_platform_surface(surface) - Use: surface.platform ~= nil
+  2. get_platform_for_surface(surface) - Use: surface.platform
+  3. get_platform_from_entity(entity) - Use: entity.surface.platform
 
---- Get platform object from surface
--- @param surface LuaSurface: Platform surface to query
--- @return LuaSpacePlatform|nil: Platform object or nil if not a platform
---
--- Usage:
---   local platform = platform_utils.get_platform_for_surface(entity.surface)
---   if platform then
---     -- Access platform properties
---     local location = platform.space_location
---   end
---
--- Note: Returns nil for non-platform surfaces
-function platform_utils.get_platform_for_surface(surface)
-  if not surface or not surface.valid then
-    return nil
-  end
+  Migration guide:
+  OLD: if platform_utils.is_platform_surface(entity.surface) then
+  NEW: if entity.surface.platform then
 
-  return surface.platform
-end
+  OLD: local platform = platform_utils.get_platform_for_surface(surface)
+  NEW: local platform = surface.platform
 
---- Get platform from entity's surface
--- Convenience function that extracts platform from entity in one call
--- @param entity LuaEntity: Entity on platform
--- @return LuaSpacePlatform|nil: Platform or nil if entity not on platform
---
--- Usage:
---   local platform = platform_utils.get_platform_from_entity(receiver_entity)
---   if platform then
---     -- Work with platform
---   end
---
--- Note: Returns nil if entity is invalid or not on a platform surface
-function platform_utils.get_platform_from_entity(entity)
-  if not entity or not entity.valid then
-    return nil
-  end
-
-  return platform_utils.get_platform_for_surface(entity.surface)
-end
+  OLD: local platform = platform_utils.get_platform_from_entity(entity)
+  NEW: local platform = entity and entity.valid and entity.surface.platform or nil
+--]]
 
 ---------------------------------------------------------------------------------------------------
 -- ORBIT STATUS QUERIES
@@ -204,40 +161,21 @@ function platform_utils.is_platform_orbiting(platform_id, surface_index)
   return orbited.index == surface_index
 end
 
----------------------------------------------------------------------------------------------------
--- PLATFORM ENUMERATION
----------------------------------------------------------------------------------------------------
+--[[
+  REMOVED FUNCTION: find_all_platforms
 
---- Find all platforms in the game
--- @return array: Array of LuaSpacePlatform objects (may be empty)
---
--- Usage:
---   for _, platform in pairs(platform_utils.find_all_platforms()) do
---     log("Found platform: " .. platform.name)
---   end
---
--- Performance Note:
---   This iterates game.space_platforms which is maintained by the engine.
---   Safe to call frequently but prefer caching results if used in tight loops.
---
--- Edge Cases:
---   - Returns empty table if no platforms exist
---   - Only returns valid platforms
-function platform_utils.find_all_platforms()
-  local platforms = {}
+  This function duplicated iteration over game.space_platforms.
 
-  if not game.space_platforms then
-    return platforms
-  end
+  Migration guide:
+  OLD: for _, platform in pairs(platform_utils.find_all_platforms()) do
 
-  for _, platform in pairs(game.space_platforms) do
+  NEW: Use native Factorio API:
+  for _, platform in pairs(game.space_platforms or {}) do
     if platform and platform.valid then
-      table.insert(platforms, platform)
+      -- Work with platform
     end
   end
-
-  return platforms
-end
+--]]
 
 ---------------------------------------------------------------------------------------------------
 -- RELATIONSHIP QUERIES
@@ -262,17 +200,13 @@ end
 --   - Returns false if entities are on different platforms
 --   - Returns false if either entity is invalid
 function platform_utils.on_same_platform(entity_a, entity_b)
-  if not entity_a or not entity_a.valid then
+  if not entity_a or not entity_a.valid or not entity_b or not entity_b.valid then
     return false
   end
 
-  if not entity_b or not entity_b.valid then
-    return false
-  end
-
-  -- Both must be on platform surfaces
-  local platform_a = platform_utils.get_platform_from_entity(entity_a)
-  local platform_b = platform_utils.get_platform_from_entity(entity_b)
+  -- Get platforms directly from entity surfaces (no wrapper)
+  local platform_a = entity_a.surface.platform
+  local platform_b = entity_b.surface.platform
 
   if not platform_a or not platform_b then
     return false

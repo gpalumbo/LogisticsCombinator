@@ -34,9 +34,10 @@ function logistics_utils.supports_logistics_control(entity)
     return false
   end
 
-  -- Check if entity has logistic_sections property
+  -- Check if entity has a requester point (logistics capability)
   -- This includes: cargo landing pads, inserters, assemblers, cargo bays, etc.
-  return entity.logistic_sections ~= nil
+  local requester_point = entity.get_requester_point()
+  return requester_point ~= nil
 end
 
 -- =============================================================================
@@ -44,13 +45,21 @@ end
 -- =============================================================================
 
 --- Find all logistics-enabled entities connected to a circuit network
--- Scans all entities on the circuit network and returns those with logistics capability
--- @param circuit_network LuaCircuitNetwork: Network to scan
--- @return table: Array of entities with logistic_sections (may be empty)
 --
--- USAGE:
--- local red_network = combinator.get_circuit_network(defines.wire_type.red, defines.circuit_connector_id.combinator_output)
--- local entities = logistics_utils.find_logistics_entities_on_network(red_network)
+-- ⚠️ WARNING: This function requires entity tracking via wire connection events!
+-- LuaCircuitNetwork does NOT have a connected_entities property in Factorio 2.0.
+--
+-- IMPLEMENTATION REQUIRED:
+-- - Track entities when wires are connected (on_wire_added event)
+-- - Store in global: global.circuit_entities[network_id] = {entity_unit_numbers}
+-- - Use this function as a helper to filter tracked entities
+--
+-- @param circuit_network LuaCircuitNetwork: Network to scan
+-- @return table: Array of entities with logistics capability (may be empty)
+--
+-- TEMPORARY IMPLEMENTATION:
+-- Currently returns empty array. Caller must implement event-based tracking.
+-- See scripts/logistics_combinator.lua for tracking implementation.
 function logistics_utils.find_logistics_entities_on_network(circuit_network)
   local results = {}
 
@@ -58,14 +67,15 @@ function logistics_utils.find_logistics_entities_on_network(circuit_network)
     return results
   end
 
-  -- Iterate through all entities connected to this circuit network
-  local connected_entities = circuit_network.connected_entities or {}
+  -- TODO: Implement event-based entity tracking
+  -- LuaCircuitNetwork.connected_entities does NOT exist in Factorio API
+  -- This function cannot work without external tracking
 
-  for _, entity in pairs(connected_entities) do
-    if entity.valid and logistics_utils.supports_logistics_control(entity) then
-      table.insert(results, entity)
-    end
-  end
+  -- Placeholder: Return empty array
+  -- The logistics combinator script must track connected entities via:
+  -- - on_wire_added event: Add entity to global.circuit_entities[network.network_id]
+  -- - on_wire_removed event: Remove entity from tracking
+  -- - Pass tracked entities to this function for filtering
 
   return results
 end
@@ -95,7 +105,12 @@ function logistics_utils.has_logistics_group(entity, group_name)
     return false, nil
   end
 
-  local sections = entity.logistic_sections
+  local requester_point = entity.get_requester_point()
+  if not requester_point then
+    return false, nil
+  end
+
+  local sections = requester_point.sections
 
   -- Iterate through all sections
   for i = 1, #sections do
@@ -146,9 +161,13 @@ function logistics_utils.inject_logistics_group(entity, group_name, combinator_i
     return nil, "Combinator ID required for tracking"
   end
 
-  -- Create new logistics section
-  local sections = entity.logistic_sections
-  local new_section = sections.add_section()
+  -- Get requester point and create new logistics section
+  local requester_point = entity.get_requester_point()
+  if not requester_point then
+    return nil, "Entity does not have a requester point"
+  end
+
+  local new_section = requester_point.add_section()
 
   if not new_section then
     return nil, "Failed to create logistics section"
@@ -163,7 +182,7 @@ function logistics_utils.inject_logistics_group(entity, group_name, combinator_i
   -- new_section.metadata = {combinator_id = combinator_id}  -- Not available in API
 
   -- Return the section index (1-based)
-  local section_index = #sections
+  local section_index = #requester_point.sections
 
   return section_index, nil
 end
@@ -200,8 +219,13 @@ function logistics_utils.remove_logistics_group(entity, group_name, combinator_i
     return false, 0
   end
 
+  local requester_point = entity.get_requester_point()
+  if not requester_point then
+    return false, 0
+  end
+
   tracking_data = tracking_data or {}
-  local sections = entity.logistic_sections
+  local sections = requester_point.sections
   local removed_count = 0
 
   -- Iterate backwards to safely remove sections
@@ -215,7 +239,7 @@ function logistics_utils.remove_logistics_group(entity, group_name, combinator_i
 
       if injected_by == combinator_id then
         -- Remove the section
-        sections.remove_section(i)
+        requester_point.remove_section(i)
         removed_count = removed_count + 1
       end
     end
@@ -311,13 +335,16 @@ function logistics_utils.cleanup_combinator_groups(combinator_id, tracking_data)
 
     -- If entity found, remove sections injected by this combinator
     if entity and entity.valid and logistics_utils.supports_logistics_control(entity) then
-      local sections = entity.logistic_sections
+      local requester_point = entity.get_requester_point()
+      if requester_point then
+        local sections = requester_point.sections
 
-      -- Iterate backwards to safely remove
-      for section_idx = #sections, 1, -1 do
-        if entity_sections[section_idx] == combinator_id then
-          sections.remove_section(section_idx)
-          total_removed = total_removed + 1
+        -- Iterate backwards to safely remove
+        for section_idx = #sections, 1, -1 do
+          if entity_sections[section_idx] == combinator_id then
+            requester_point.remove_section(section_idx)
+            total_removed = total_removed + 1
+          end
         end
       end
     end
@@ -339,7 +366,7 @@ end
 -- local removed_count = logistics_utils.cleanup_entity_groups(entity, tracking)
 -- game.print("Cleaned up " .. removed_count .. " injected groups from entity")
 -- -- Caller must clear tracking data: global.injected_groups[entity.unit_number] = nil
-function logistics_utils.cleanup_entity_groups(entity, tracking_data)
+function logistics_utils.cleanup_entity_groups(entity, tracking_data)     
   if not logistics_utils.supports_logistics_control(entity) then
     return 0
   end
@@ -348,13 +375,18 @@ function logistics_utils.cleanup_entity_groups(entity, tracking_data)
     return 0
   end
 
-  local sections = entity.logistic_sections
+  local requester_point = entity.get_requester_point()
+  if not requester_point then
+    return 0
+  end
+
+  local sections = requester_point.sections
   local removed_count = 0
 
   -- Iterate backwards to safely remove sections
   for section_idx = #sections, 1, -1 do
     if tracking_data[section_idx] then
-      sections.remove_section(section_idx)
+      requester_point.remove_section(section_idx)
       removed_count = removed_count + 1
     end
   end

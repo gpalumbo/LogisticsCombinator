@@ -194,16 +194,6 @@ function close_gui_for_player(player, gui_name)
   end
 end
 
---- Center GUI element on screen
--- Sets the location of a screen GUI element to center
--- @param gui_element LuaGuiElement: Root GUI element to center
-function center_gui(gui_element)
-  if not gui_element or not gui_element.valid then return end
-
-  -- Force recalculation of size
-  gui_element.force_auto_center()
-end
-
 -- ==============================================================================
 -- OPERATOR UTILITIES
 -- ==============================================================================
@@ -340,7 +330,6 @@ return {
 
   -- Utility functions
   close_gui_for_player = close_gui_for_player,
-  center_gui = center_gui,
 
   -- Operator utilities
   populate_operator_dropdown = populate_operator_dropdown,

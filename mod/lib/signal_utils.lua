@@ -108,16 +108,16 @@ end
 --[[
   Merge red and green wire signals (returns NEW table)
 
-  When both red and green wires have the same signal, the MAXIMUM value is used.
-  This matches Factorio's vanilla behavior for circuit condition evaluation.
+  When both red and green wires have the same signal, values are SUMMED.
+  This matches Factorio's vanilla behavior for circuit network evaluation.
 
   @param red_signals table: Red wire signal table
   @param green_signals table: Green wire signal table
-  @return table: New merged signal table (max value per signal)
+  @return table: New merged signal table (sum value per signal)
 
   BEHAVIOR:
   - Creates new table (does not modify inputs)
-  - MAX value wins for duplicate signals
+  - SUM values for duplicate signals
   - Handles nil inputs (returns empty table)
   - Preserves signal_id table references
 
@@ -125,7 +125,7 @@ end
     red = {[iron_signal] = 10, [copper_signal] = 5}
     green = {[iron_signal] = 15, [coal_signal] = 20}
     merged = merge_signals(red, green)
-    -- Result: {[iron_signal] = 15, [copper_signal] = 5, [coal_signal] = 20}
+    -- Result: {[iron_signal] = 25, [copper_signal] = 5, [coal_signal] = 20}
 --]]
 function signal_utils.merge_signals(red_signals, green_signals)
   local merged = {}
@@ -139,12 +139,12 @@ function signal_utils.merge_signals(red_signals, green_signals)
     end
   end
 
-  -- Add/merge green signals (max value wins)
+  -- Add/merge green signals (sum values)
   if green_signals then
     for signal_id, count in pairs(green_signals) do
       if signal_id and count and count ~= 0 then
         if merged[signal_id] then
-          merged[signal_id] = math.max(merged[signal_id], count)
+          merged[signal_id] = merged[signal_id] + count
         else
           merged[signal_id] = count
         end
@@ -350,11 +350,11 @@ function signal_utils.run_tests()
   assert_equal(target[copper], 5, "add_signals: preserve target-only")
   assert_equal(target[coal], 20, "add_signals: add source-only")
 
-  -- TEST: merge_signals (max value wins)
+  -- TEST: merge_signals (sum values)
   local red = {[iron] = 10, [copper] = 30}
   local green = {[iron] = 25, [coal] = 15}
   local merged = signal_utils.merge_signals(red, green)
-  assert_equal(merged[iron], 25, "merge_signals: max value for iron")
+  assert_equal(merged[iron], 35, "merge_signals: sum value for iron")
   assert_equal(merged[copper], 30, "merge_signals: red-only copper")
   assert_equal(merged[coal], 15, "merge_signals: green-only coal")
 
