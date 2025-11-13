@@ -48,16 +48,11 @@ local globals = {}
       [entity_unit_number] = {
         [section_index] = combinator_unit_number  -- Which combinator injected this section
       }
-    },
-
-    -- GUI state per player
-    gui_state = {
-      [player_index] = {
-        open_gui = string,  -- "logistics_combinator" or nil
-        open_entity = number  -- unit_number of entity with open GUI
-      }
     }
   }
+
+  NOTE: GUI state is NOT tracked in global. Instead, GUI elements use tags
+  to store entity references (element.tags.entity_unit_number).
 --]]
 
 -- ==============================================================================
@@ -69,7 +64,6 @@ local globals = {}
 function globals.init_globals()
   global.logistics_combinators = global.logistics_combinators or {}
   global.injected_groups = global.injected_groups or {}
-  global.gui_state = global.gui_state or {}
 
   log("Mission Control: Global state initialized")
 end
@@ -84,44 +78,6 @@ end
 function globals.get_logistics_combinator(unit_number)
   if not unit_number or not global.logistics_combinators then return nil end
   return global.logistics_combinators[unit_number]
-end
-
--- ==============================================================================
--- GUI STATE MANAGEMENT
--- ==============================================================================
-
---- Set GUI state for a player
--- @param player_index number: Player index
--- @param gui_name string|nil: Name of open GUI
--- @param entity_unit_number number|nil: Unit number of entity with open GUI
-function globals.set_gui_state(player_index, gui_name, entity_unit_number)
-  if not global.gui_state then
-    global.gui_state = {}
-  end
-
-  if not global.gui_state[player_index] then
-    global.gui_state[player_index] = {}
-  end
-
-  global.gui_state[player_index].open_gui = gui_name
-  global.gui_state[player_index].open_entity = entity_unit_number
-end
-
---- Get GUI state for a player
--- @param player_index number: Player index
--- @return table: GUI state {open_gui, open_entity}
-function globals.get_gui_state(player_index)
-  if not global.gui_state or not global.gui_state[player_index] then
-    return {open_gui = nil, open_entity = nil}
-  end
-  return global.gui_state[player_index]
-end
-
---- Clear GUI state for a player
--- @param player_index number: Player index
-function globals.clear_gui_state(player_index)
-  if not global.gui_state then return end
-  global.gui_state[player_index] = nil
 end
 
 -- ==============================================================================

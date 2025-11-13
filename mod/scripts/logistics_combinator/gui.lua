@@ -59,7 +59,8 @@ function logistics_gui.create_gui(player, entity)
   local main_frame = player.gui.screen.add{
     type = "frame",
     name = GUI_NAMES.LOGISTICS_MAIN,
-    direction = "vertical"
+    direction = "vertical",
+    tags = {entity_unit_number = entity.unit_number}  -- Store entity reference in tags
   }
 
   -- Create titlebar
@@ -125,9 +126,6 @@ function logistics_gui.create_gui(player, entity)
 
   -- Center GUI on screen
   main_frame.force_auto_center()
-
-  -- Store GUI state
-  globals.set_gui_state(player.index, "logistics_combinator", entity.unit_number)
 end
 
 --- Add a rule display to the GUI
@@ -243,7 +241,6 @@ function logistics_gui.close_gui(player)
   if not player or not player.valid then return end
 
   gui_utils.close_gui_for_player(player, GUI_NAMES.LOGISTICS_MAIN)
-  globals.clear_gui_state(player.index)
 end
 
 -- ==============================================================================
@@ -266,18 +263,19 @@ end
 function logistics_gui.on_closed(player, element)
   if not element or element.name ~= GUI_NAMES.LOGISTICS_MAIN then return end
 
+  -- Get entity reference from GUI element tags
+  local entity_unit_number = element.tags and element.tags.entity_unit_number
+
   -- Save any pending changes
   logistics_gui.save_gui_changes(player)
 
   -- Close GUI
   logistics_gui.close_gui(player)
 
-  -- Trigger rule processing
-  local gui_state = globals.get_gui_state(player.index)
-  if gui_state and gui_state.open_entity then
-    -- Process rules through the parent module
+  -- Trigger rule processing for this combinator
+  if entity_unit_number then
     local logistics_combinator = require("scripts.logistics_combinator.init")
-    logistics_combinator.process_rules(gui_state.open_entity)
+    logistics_combinator.process_rules(entity_unit_number)
   end
 end
 
@@ -373,8 +371,12 @@ end
 --- Add a new rule
 -- @param player LuaPlayer: Player adding the rule
 function logistics_gui.add_new_rule(player)
-  local gui_state = globals.get_gui_state(player.index)
-  if not gui_state or not gui_state.open_entity then return end
+  -- Get entity unit_number from open GUI element
+  local main_frame = player.gui.screen[GUI_NAMES.LOGISTICS_MAIN]
+  if not main_frame or not main_frame.tags then return end
+
+  local entity_unit_number = main_frame.tags.entity_unit_number
+  if not entity_unit_number then return end
 
   -- Create new rule with defaults
   local new_rule = {
@@ -389,7 +391,7 @@ function logistics_gui.add_new_rule(player)
   }
 
   -- Add to combinator data
-  local combinator_data = globals.get_logistics_combinator(gui_state.open_entity)
+  local combinator_data = globals.get_logistics_combinator(entity_unit_number)
   if combinator_data then
     -- Initialize last_state for edge triggering
     new_rule.last_state = false
@@ -397,37 +399,45 @@ function logistics_gui.add_new_rule(player)
   end
 
   -- Refresh GUI
-  logistics_gui.refresh_gui(player, gui_state.open_entity)
+  logistics_gui.refresh_gui(player, entity_unit_number)
 end
 
 --- Delete a rule
 -- @param player LuaPlayer: Player deleting the rule
 -- @param rule_index number: Index of rule to delete
 function logistics_gui.delete_rule(player, rule_index)
-  local gui_state = globals.get_gui_state(player.index)
-  if not gui_state or not gui_state.open_entity then return end
+  -- Get entity unit_number from open GUI element
+  local main_frame = player.gui.screen[GUI_NAMES.LOGISTICS_MAIN]
+  if not main_frame or not main_frame.tags then return end
+
+  local entity_unit_number = main_frame.tags.entity_unit_number
+  if not entity_unit_number then return end
 
   -- Remove from combinator data
-  local combinator_data = globals.get_logistics_combinator(gui_state.open_entity)
+  local combinator_data = globals.get_logistics_combinator(entity_unit_number)
   if combinator_data and rule_index > 0 and rule_index <= #combinator_data.rules then
     table.remove(combinator_data.rules, rule_index)
   end
 
   -- Refresh GUI
-  logistics_gui.refresh_gui(player, gui_state.open_entity)
+  logistics_gui.refresh_gui(player, entity_unit_number)
 end
 
 --- Update rule group selection
 -- @param player LuaPlayer: Player making the change
 -- @param element LuaGuiElement: Group picker element
 function logistics_gui.update_rule_group(player, element)
-  local gui_state = globals.get_gui_state(player.index)
-  if not gui_state or not gui_state.open_entity then return end
+  -- Get entity unit_number from open GUI element
+  local main_frame = player.gui.screen[GUI_NAMES.LOGISTICS_MAIN]
+  if not main_frame or not main_frame.tags then return end
+
+  local entity_unit_number = main_frame.tags.entity_unit_number
+  if not entity_unit_number then return end
 
   local rule_index = tonumber(element.name:match("%d+$"))
   if not rule_index then return end
 
-  local combinator_data = globals.get_logistics_combinator(gui_state.open_entity)
+  local combinator_data = globals.get_logistics_combinator(entity_unit_number)
   if not combinator_data or not combinator_data.rules[rule_index] then return end
 
   -- Update rule
@@ -438,13 +448,17 @@ end
 -- @param player LuaPlayer: Player making the change
 -- @param element LuaGuiElement: Radio button element
 function logistics_gui.update_rule_action(player, element)
-  local gui_state = globals.get_gui_state(player.index)
-  if not gui_state or not gui_state.open_entity then return end
+  -- Get entity unit_number from open GUI element
+  local main_frame = player.gui.screen[GUI_NAMES.LOGISTICS_MAIN]
+  if not main_frame or not main_frame.tags then return end
+
+  local entity_unit_number = main_frame.tags.entity_unit_number
+  if not entity_unit_number then return end
 
   local rule_index = tonumber(element.name:match("%d+$"))
   if not rule_index then return end
 
-  local combinator_data = globals.get_logistics_combinator(gui_state.open_entity)
+  local combinator_data = globals.get_logistics_combinator(entity_unit_number)
   if not combinator_data or not combinator_data.rules[rule_index] then return end
 
   -- Determine action from element name
@@ -459,7 +473,7 @@ function logistics_gui.update_rule_action(player, element)
     combinator_data.rules[rule_index].action = action
 
     -- Update radio buttons
-    logistics_gui.refresh_gui(player, gui_state.open_entity)
+    logistics_gui.refresh_gui(player, entity_unit_number)
   end
 end
 
@@ -467,14 +481,18 @@ end
 -- @param player LuaPlayer: Player making the change
 -- @param element LuaGuiElement: Condition element that changed
 function logistics_gui.update_rule_condition(player, element)
-  local gui_state = globals.get_gui_state(player.index)
-  if not gui_state or not gui_state.open_entity then return end
+  -- Get entity unit_number from open GUI element
+  local main_frame = player.gui.screen[GUI_NAMES.LOGISTICS_MAIN]
+  if not main_frame or not main_frame.tags then return end
+
+  local entity_unit_number = main_frame.tags.entity_unit_number
+  if not entity_unit_number then return end
 
   -- Extract rule index from element name
   local rule_index = tonumber(element.name:match("rule_(%d+)_"))
   if not rule_index then return end
 
-  local combinator_data = globals.get_logistics_combinator(gui_state.open_entity)
+  local combinator_data = globals.get_logistics_combinator(entity_unit_number)
   if not combinator_data or not combinator_data.rules[rule_index] then return end
 
   local rule = combinator_data.rules[rule_index]
