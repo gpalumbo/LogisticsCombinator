@@ -366,7 +366,7 @@ end
 -- local removed_count = logistics_utils.cleanup_entity_groups(entity, tracking)
 -- game.print("Cleaned up " .. removed_count .. " injected groups from entity")
 -- -- Caller must clear tracking data: global.injected_groups[entity.unit_number] = nil
-function logistics_utils.cleanup_entity_groups(entity, tracking_data)
+function logistics_utils.cleanup_entity_groups(entity, tracking_data)     
   if not logistics_utils.supports_logistics_control(entity) then
     return 0
   end

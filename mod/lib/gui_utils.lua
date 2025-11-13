@@ -194,20 +194,6 @@ function close_gui_for_player(player, gui_name)
   end
 end
 
---[[
-  REMOVED FUNCTION: center_gui
-
-  This function was a trivial wrapper around the native Factorio API.
-
-  Migration guide:
-  OLD: gui_utils.center_gui(frame)
-
-  NEW: Use native Factorio API:
-  frame.force_auto_center()
-
-  NOTE: This function was not used anywhere in the codebase.
---]]
-
 -- ==============================================================================
 -- OPERATOR UTILITIES
 -- ==============================================================================
