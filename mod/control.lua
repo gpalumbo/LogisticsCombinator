@@ -8,7 +8,7 @@
 -- IMPORTS
 -- ==============================================================================
 
-local globals = require("scripts.globals")
+local mc_globals = require("scripts.mc_globals")
 local logistics_combinator = require("scripts.logistics_combinator.init")
 local gui_handlers = require("scripts.gui_handlers")
 
@@ -19,7 +19,7 @@ local gui_handlers = require("scripts.gui_handlers")
 --- Initialize mod on first load or when added to existing save
 script.on_init(function()
   log("Mission Control mod: Initializing...")
-  globals.init_globals()
+  mc_globals.init_globals()
   log("Mission Control mod: Initialization complete")
 end)
 
@@ -34,10 +34,10 @@ script.on_configuration_changed(function(data)
 
   -- Migrate if needed
   if old_version and new_version then
-    globals.migrate_globals(old_version, new_version)
+    mc_globals.migrate_globals(old_version, new_version)
   else
     -- Ensure globals are initialized
-    globals.init_globals()
+    mc_globals.init_globals()
   end
 
   log("Mission Control mod: Configuration change handled")
@@ -132,35 +132,20 @@ end)
 -- CIRCUIT WIRE EVENTS
 -- ==============================================================================
 
---- Handle wire added to entity
-script.on_event(defines.events.on_wire_created, function(event)
-  -- Check source entity
-  local source = event.source
-  if source and source.valid and source.name == "logistics-combinator" then
-    logistics_combinator.on_wire_added(source)
-  end
+--[[
+  IMPORTANT: Wire connection/disconnection events DO NOT EXIST in Factorio's API!
 
-  -- Check destination entity
-  local destination = event.destination
-  if destination and destination.valid and destination.name == "logistics-combinator" then
-    logistics_combinator.on_wire_added(destination)
-  end
-end)
+  Events like on_wire_created, on_wire_removed, on_wire_added, on_wire_disconnected
+  were NEVER part of the official API. This has been a long-standing feature request
+  since 2017, but Factorio developers have rejected it because connecting/disconnecting
+  networks destroys and recreates networks, which would trigger cascading events.
 
---- Handle wire removed from entity
-script.on_event(defines.events.on_wire_removed, function(event)
-  -- Check source entity
-  local source = event.source
-  if source and source.valid and source.name == "logistics-combinator" then
-    logistics_combinator.on_wire_removed(source)
-  end
+  SOLUTION: We use POLLING instead
+  - Connection discovery: on_nth_tick(60) checks for new wire connections every second
+  - Rule processing: on_tick processes rules and checks connections when conditions change
 
-  -- Check destination entity
-  local destination = event.destination
-  if destination and destination.valid and destination.name == "logistics-combinator" then
-    logistics_combinator.on_wire_removed(destination)
-  end
-end)
+  See: https://forums.factorio.com/viewtopic.php?t=46375
+--]]
 
 -- ==============================================================================
 -- GUI EVENTS
@@ -200,15 +185,26 @@ end)
 -- PERIODIC UPDATES
 -- ==============================================================================
 
---- Process logistics combinator rules every 15 ticks
--- This handles rule evaluation and logistics group injection/removal
+--- Process logistics combinator conditions every 15 ticks (like vanilla combinators poll interval)
+-- This handles condition evaluation and logistics section injection/removal
+-- PERFORMANCE: Only processes combinators with conditions, uses entity cache for O(1) lookups
 script.on_nth_tick(15, function(event)
   -- Process all registered logistics combinators
-  for unit_number, combinator_data in pairs(global.logistics_combinators or {}) do
-    -- Only process if combinator has rules
-    if combinator_data.rules and #combinator_data.rules > 0 then
+  for unit_number, combinator_data in pairs(storage.logistics_combinators or {}) do
+    -- Only process if combinator has conditions
+    if combinator_data.conditions and #combinator_data.conditions > 0 then
       logistics_combinator.process_rules(unit_number)
     end
+  end
+end)
+
+--- Update connected entities for all combinators every 60 ticks (once per second)
+-- This is our wire change detection mechanism since Factorio has no wire events
+-- PERFORMANCE: Polling interval chosen to balance responsiveness vs UPS impact
+script.on_nth_tick(60, function(event)
+  -- Update connections for all registered logistics combinators
+  for unit_number, combinator_data in pairs(storage.logistics_combinators or {}) do
+    logistics_combinator.update_connected_entities(unit_number)
   end
 end)
 
@@ -226,7 +222,7 @@ remote.add_interface("mission_control", {
   -- @param unit_number number: Combinator unit_number
   -- @return table: Combinator data or nil
   get_combinator_data = function(unit_number)
-    return globals.get_logistics_combinator(unit_number)
+    return mc_globals.get_logistics_combinator(unit_number)
   end,
 
   --- Force update connected entities for a combinator

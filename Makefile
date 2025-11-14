@@ -8,16 +8,16 @@ INFO_FILE := $(MOD_DIR)/info.json
 DIST_DIR := dist
 
 # Luacheck configuration
-LUACHECK := $(shell which luacheck 2>/dev/null)
+LUACHECK := $(which luacheck 2>/dev/null)
 LUACHECK_CONFIG := .luacheckrc
 
 # Extract mod name and version from info.json
-MOD_NAME := $(shell grep -Po '"name":\s*"\K[^"]+' $(INFO_FILE))
-MOD_VERSION := $(shell grep -Po '"version":\s*"\K[^"]+' $(INFO_FILE))
+MOD_NAME := $(shell jq -r .name $(INFO_FILE))
+MOD_VERSION := $(shell jq -r .version $(INFO_FILE))
 MOD_FULL_NAME := $(MOD_NAME)_$(MOD_VERSION)
 
 # Platform detection for Factorio mod directory
-UNAME_S := $(shell uname -s)
+UNAME_S := $(uname -s)
 ifeq ($(UNAME_S),Linux)
     FACTORIO_MODS_DIR := $(HOME)/.factorio/mods
 endif
@@ -37,7 +37,7 @@ FACTORIO_MODS_DIR ?= $(HOME)/.factorio/mods
 .PHONY: all help clean package localdeploy install uninstall check lint lint-strict lint-install check-luacheck ci
 
 # Default target
-all: package
+all: help
 
 # Help target
 help:
@@ -96,7 +96,7 @@ package: check clean
 	@find $(DIST_DIR)/$(MOD_FULL_NAME) -name "*~" -type f -delete 2>/dev/null || true
 
 	@echo "Creating ZIP archive..."
-	@cd $(DIST_DIR) && zip -r $(MOD_FULL_NAME).zip $(MOD_FULL_NAME) -q
+	@cd $(DIST_DIR) && 7z a -r $(MOD_FULL_NAME).zip $(MOD_FULL_NAME) 
 	@rm -rf $(DIST_DIR)/$(MOD_FULL_NAME)
 
 	@echo ""

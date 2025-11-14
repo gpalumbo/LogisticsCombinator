@@ -16,12 +16,12 @@
 -- - Low-level logistics operations (that's lib/logistics_utils)
 -- - GUI creation (that's scripts/logistics_combinator/gui)
 -- - Condition evaluation algorithm (that's lib/gui_utils)
--- - Global state storage (that's scripts/globals)
+-- - Global state storage (that's scripts/mc_globals)
 
 local logistics_combinator = {}
 
 -- Load dependencies
-local globals = require("scripts.globals")
+local mc_globals = require("scripts.mc_globals")
 local logistics_utils = require("lib.logistics_utils")
 local gui_utils = require("lib.gui_utils")
 local circuit_utils = require("lib.circuit_utils")
@@ -33,8 +33,8 @@ local logistics_gui = nil
 -- ==============================================================================
 -- MODULE-LOCAL ENTITY CACHE (Performance Optimization)
 -- ==============================================================================
--- CRITICAL: These caches are NOT serialized in global. They are rebuilt on_load.
--- Global state stores surface_index + position for reconstruction.
+-- CRITICAL: These caches are NOT serialized in storage. They are rebuilt on_load.
+-- Storage state stores surface_index + position for reconstruction.
 -- This avoids O(n²) entity lookups that would cause severe performance issues.
 
 --- Cache of combinator entities by unit_number
@@ -62,11 +62,11 @@ local function get_combinator_entity(unit_number)
   end
 
   -- Cache miss - need to find entity
-  if not global.logistics_combinators or not global.logistics_combinators[unit_number] then
+  if not storage.logistics_combinators or not storage.logistics_combinators[unit_number] then
     return nil
   end
 
-  local data = global.logistics_combinators[unit_number]
+  local data = storage.logistics_combinators[unit_number]
   local surface_index = data.surface_index
   local position = data.position
 
@@ -131,12 +131,13 @@ function logistics_combinator.on_built(entity, player)
   local unit_number = entity.unit_number
   if not unit_number then return end
 
-  global.logistics_combinators = global.logistics_combinators or {}
-  global.logistics_combinators[unit_number] = {
+  storage.logistics_combinators = storage.logistics_combinators or {}
+  storage.logistics_combinators[unit_number] = {
     entity_unit_number = unit_number,
     surface_index = entity.surface.index,  -- Store for entity reconstruction
     position = entity.position,            -- Store for entity reconstruction
-    rules = {},
+    conditions = {},  -- Array of {signal, operator, value, logic="AND"|"OR"}
+    last_state = false,  -- Overall condition state for edge triggering
     connected_entities = {}
   }
 
@@ -167,8 +168,8 @@ function logistics_combinator.on_removed(entity)
   combinator_entity_cache[unit_number] = nil
 
   -- Unregister from global state
-  if global.logistics_combinators then
-    global.logistics_combinators[unit_number] = nil
+  if storage.logistics_combinators then
+    storage.logistics_combinators[unit_number] = nil
   end
 
   log("Logistics combinator removed: " .. unit_number)
@@ -179,12 +180,12 @@ end
 -- ==============================================================================
 
 --- Find and cache all logistics-enabled entities connected to combinator output
--- Uses Factorio's circuit_connected_entities API to find entities on output network
--- PERFORMANCE: Now uses entity cache, O(1) lookup instead of O(n²) search
+-- Uses Factorio 2.0 LuaWireConnector API to traverse circuit connections
+-- PERFORMANCE: Uses entity cache, O(1) lookup instead of O(n²) search
 -- @param unit_number number: Combinator unit_number
 function logistics_combinator.update_connected_entities(unit_number)
-  if not global.logistics_combinators then return end
-  local combinator_data = global.logistics_combinators[unit_number]
+  if not storage.logistics_combinators then return end
+  local combinator_data = storage.logistics_combinators[unit_number]
   if not combinator_data then return end
 
   -- Get the entity using cache (O(1) after first lookup)
@@ -195,30 +196,33 @@ function logistics_combinator.update_connected_entities(unit_number)
     return
   end
 
-  -- Get all circuit-connected entities
-  local connected = entity.circuit_connected_entities
+  -- Use Factorio 2.0 API: get all wire connectors for this entity
+  local wire_connectors = entity.get_wire_connectors(false)
 
-  if not connected then
+  if not wire_connectors then
     combinator_data.connected_entities = {}
     return
   end
 
-  -- Collect entities from both red and green networks
+  -- Collect entities from all wire connections
   local entities_set = {}  -- Use set to avoid duplicates
 
-  for _, e in pairs(connected.red or {}) do
-    if e.valid and logistics_utils.supports_logistics_control(e) then
-      entities_set[e.unit_number] = true
-      -- Cache connected entities for later retrieval
-      connected_entity_cache[e.unit_number] = e
-    end
-  end
+  for connector_id, wire_connector in pairs(wire_connectors) do
+    -- Iterate through all real connections (excluding ghost wires)
+    local connections = wire_connector.real_connections
 
-  for _, e in pairs(connected.green or {}) do
-    if e.valid and logistics_utils.supports_logistics_control(e) then
-      entities_set[e.unit_number] = true
-      -- Cache connected entities for later retrieval
-      connected_entity_cache[e.unit_number] = e
+    if connections then
+      for _, connected_wire_connector in pairs(connections) do
+        local connected_entity = connected_wire_connector.owner
+
+        -- Check if entity is valid and supports logistics control
+        if connected_entity and connected_entity.valid and
+           logistics_utils.supports_logistics_control(connected_entity) then
+          entities_set[connected_entity.unit_number] = true
+          -- Cache connected entities for later retrieval
+          connected_entity_cache[connected_entity.unit_number] = connected_entity
+        end
+      end
     end
   end
 
@@ -228,24 +232,32 @@ function logistics_combinator.update_connected_entities(unit_number)
     table.insert(entities_array, unit_num)
   end
 
+  -- Only log if connections changed
+  local old_count = combinator_data.connected_entities and #combinator_data.connected_entities or 0
+  local new_count = #entities_array
+
   -- Cache in combinator data
   combinator_data.connected_entities = entities_array
 
-  log("Updated connected entities for combinator " .. unit_number .. ": " .. #entities_array .. " entities")
+  if old_count ~= new_count then
+    log("Updated connected entities for combinator " .. unit_number .. ": " .. old_count .. " -> " .. new_count .. " entities")
+  end
 end
 
 -- ==============================================================================
 -- RULE PROCESSING
 -- ==============================================================================
 
---- Process all rules for a logistics combinator
+--- Process complex condition for a logistics combinator
 -- Called every 15 ticks for active combinators
 -- Implements edge-triggered behavior: only act on condition state changes
--- PERFORMANCE: Now uses entity cache, O(1) lookup instead of O(n²) search
+-- When condition becomes TRUE: inject ALL logistics sections into connected entities
+-- When condition becomes FALSE: remove ALL injected sections from connected entities
+-- PERFORMANCE: Uses entity cache, O(1) lookup instead of O(n²) search
 -- @param unit_number number: Combinator unit_number
 function logistics_combinator.process_rules(unit_number)
-  if not global.logistics_combinators then return end
-  local combinator_data = global.logistics_combinators[unit_number]
+  if not storage.logistics_combinators then return end
+  local combinator_data = storage.logistics_combinators[unit_number]
   if not combinator_data then return end
 
   -- Get the combinator entity using cache (O(1) after first lookup)
@@ -253,97 +265,169 @@ function logistics_combinator.process_rules(unit_number)
 
   if not entity or not entity.valid then return end
 
-  -- Read input signals (merge red and green)
-  local merged_signals = entity.get_merged_signals(defines.circuit_connector_id.combinator_input)
-
-  -- Convert to signal lookup table
+  -- Read input signals (merge red and green networks)
   local signals = {}
-  if merged_signals then
-    for _, signal_data in pairs(merged_signals) do
-      if signal_data.signal and signal_data.count then
+
+  -- Read red network
+  local red_network = entity.get_circuit_network(defines.wire_connector_id.combinator_input_red)
+  if red_network and red_network.signals then
+    for _, signal_data in pairs(red_network.signals) do
+      if signal_data and signal_data.signal and signal_data.count then
         local key = gui_utils.get_signal_key(signal_data.signal)
-        signals[key] = signal_data.count
+        if key ~= "" then
+          signals[key] = (signals[key] or 0) + signal_data.count
+        end
       end
     end
   end
 
-  -- Get connected entities
-  local connected_entity_ids = combinator_data.connected_entities or {}
-
-  -- Process each rule
-  for rule_idx, rule in ipairs(combinator_data.rules) do
-    -- Evaluate condition
-    local condition_met = gui_utils.evaluate_condition(signals, rule.condition)
-
-    -- Edge-triggered: only act if state changed
-    local state_changed = (condition_met ~= rule.last_state)
-
-    if state_changed then
-      rule.last_state = condition_met
-
-      -- Only act when condition becomes true
-      if condition_met then
-        logistics_combinator.execute_rule(rule, connected_entity_ids, unit_number)
+  -- Read green network
+  local green_network = entity.get_circuit_network(defines.wire_connector_id.combinator_input_green)
+  if green_network and green_network.signals then
+    for _, signal_data in pairs(green_network.signals) do
+      if signal_data and signal_data.signal and signal_data.count then
+        local key = gui_utils.get_signal_key(signal_data.signal)
+        if key ~= "" then
+          signals[key] = (signals[key] or 0) + signal_data.count
+        end
       end
+    end
+  end
+
+  -- Evaluate complex condition (with AND/OR logic)
+  local overall_result = logistics_combinator.evaluate_complex_condition(signals, combinator_data.conditions)
+
+  -- Edge-triggered: only act if state changed
+  local state_changed = (overall_result ~= combinator_data.last_state)
+
+  if state_changed then
+    combinator_data.last_state = overall_result
+
+    if overall_result then
+      -- Condition became TRUE: inject ALL logistics sections
+      logistics_combinator.inject_all_sections(entity, combinator_data, unit_number)
+    else
+      -- Condition became FALSE: remove ALL injected sections
+      logistics_combinator.remove_all_sections(entity, combinator_data, unit_number)
     end
   end
 end
 
---- Execute a single rule on all connected entities
--- PERFORMANCE: Now uses entity cache, O(1) lookup per entity instead of O(n²) search
--- @param rule table: Rule definition
--- @param connected_entity_ids table: Array of entity unit_numbers
--- @param combinator_unit_number number: Combinator that owns this rule
-function logistics_combinator.execute_rule(rule, connected_entity_ids, combinator_unit_number)
-  if not rule or not rule.group_name or not rule.action then return end
+--- Evaluate complex condition with AND/OR logic
+-- @param signals table: Current signal values {[key] = count}
+-- @param conditions table: Array of {signal, operator, value, logic}
+-- @return boolean: True if overall condition met
+function logistics_combinator.evaluate_complex_condition(signals, conditions)
+  if not conditions or #conditions == 0 then return false end
 
-  -- Process all connected entities
+  local result = true
+  local next_logic = "AND"  -- Start with AND
+
+  for i, condition in ipairs(conditions) do
+    -- Evaluate this condition
+    local cond_met = gui_utils.evaluate_condition(signals, condition)
+
+    -- Apply previous logic operator
+    if next_logic == "AND" then
+      result = result and cond_met
+    elseif next_logic == "OR" then
+      result = result or cond_met
+    end
+
+    -- Set logic for next condition
+    next_logic = condition.logic or "AND"
+  end
+
+  return result
+end
+
+--- Inject all logistics sections from combinator into connected entities
+-- @param combinator_entity LuaEntity: The combinator entity
+-- @param combinator_data table: Combinator data from storage
+-- @param unit_number number: Combinator unit_number
+function logistics_combinator.inject_all_sections(combinator_entity, combinator_data, unit_number)
+  -- Get logistics sections from the combinator entity itself
+  if not combinator_entity.logistic_sections then
+    log("Combinator " .. unit_number .. " has no logistics sections to inject")
+    return
+  end
+
+  local sections_to_inject = {}
+  for section_index = 1, combinator_entity.logistic_sections.section_count do
+    local section = combinator_entity.logistic_sections[section_index]
+    if section and section.active then
+      table.insert(sections_to_inject, section)
+    end
+  end
+
+  if #sections_to_inject == 0 then
+    log("Combinator " .. unit_number .. " has no active sections to inject")
+    return
+  end
+
+  -- Inject into all connected entities
+  local connected_entity_ids = combinator_data.connected_entities or {}
+  local injected_count = 0
+
   for _, entity_id in ipairs(connected_entity_ids) do
-    -- Get entity using cache (O(1) after first lookup)
-    local entity = get_entity_by_unit_number(entity_id)
+    local target_entity = get_entity_by_unit_number(entity_id)
 
-    if entity and entity.valid and logistics_utils.supports_logistics_control(entity) then
-      if rule.action == "inject" then
-        -- Check if group already exists
-        local has_group, section_idx = logistics_utils.has_logistics_group(entity, rule.group_name)
+    if target_entity and target_entity.valid and target_entity.logistic_sections then
+      for _, section in ipairs(sections_to_inject) do
+        -- Copy the section to the target entity
+        local new_section = target_entity.logistic_sections.add_section()
+        if new_section then
+          -- Copy section properties
+          new_section.group = section.group
+          new_section.active = section.active
+          new_section.multiplier = section.multiplier
 
-        if not has_group then
-          -- Inject the group
-          local new_section_idx, err = logistics_utils.inject_logistics_group(
-            entity,
-            rule.group_name,
-            combinator_unit_number
-          )
+          -- Track injection
+          storage.injected_groups = storage.injected_groups or {}
+          storage.injected_groups[entity_id] = storage.injected_groups[entity_id] or {}
+          storage.injected_groups[entity_id][new_section.index] = unit_number
 
-          if new_section_idx then
-            -- Track the injection
-            global.injected_groups = global.injected_groups or {}
-            global.injected_groups[entity_id] = global.injected_groups[entity_id] or {}
-            global.injected_groups[entity_id][new_section_idx] = combinator_unit_number
-
-            log("Injected group '" .. rule.group_name .. "' into entity " .. entity_id .. " at section " .. new_section_idx)
-          else
-            log("Failed to inject group: " .. tostring(err))
-          end
-        end
-
-      elseif rule.action == "remove" then
-        -- Remove the group (only if injected by this combinator)
-        local tracking = (global.injected_groups and global.injected_groups[entity_id]) or {}
-        local removed, count = logistics_utils.remove_logistics_group(
-          entity,
-          rule.group_name,
-          combinator_unit_number,
-          tracking
-        )
-
-        if removed then
-          log("Removed " .. count .. " sections of group '" .. rule.group_name .. "' from entity " .. entity_id)
-          -- Note: tracking data cleanup happens in logistics_utils
+          injected_count = injected_count + 1
         end
       end
     end
   end
+
+  log("Injected " .. #sections_to_inject .. " sections into " .. #connected_entity_ids .. " entities (" .. injected_count .. " total sections)")
+end
+
+--- Remove all logistics sections injected by this combinator
+-- @param combinator_entity LuaEntity: The combinator entity
+-- @param combinator_data table: Combinator data from storage
+-- @param unit_number number: Combinator unit_number
+function logistics_combinator.remove_all_sections(combinator_entity, combinator_data, unit_number)
+  local connected_entity_ids = combinator_data.connected_entities or {}
+  local removed_count = 0
+
+  for _, entity_id in ipairs(connected_entity_ids) do
+    local target_entity = get_entity_by_unit_number(entity_id)
+
+    if target_entity and target_entity.valid and target_entity.logistic_sections then
+      local tracking = storage.injected_groups and storage.injected_groups[entity_id]
+      if tracking then
+        -- Remove sections injected by this combinator
+        for section_idx, combinator_id in pairs(tracking) do
+          if combinator_id == unit_number then
+            target_entity.logistic_sections.remove_section(section_idx)
+            tracking[section_idx] = nil
+            removed_count = removed_count + 1
+          end
+        end
+
+        -- Clean up empty tracking
+        if not next(tracking) then
+          storage.injected_groups[entity_id] = nil
+        end
+      end
+    end
+  end
+
+  log("Removed " .. removed_count .. " injected sections from combinator " .. unit_number)
 end
 
 -- ==============================================================================
@@ -356,13 +440,13 @@ end
 function logistics_combinator.cleanup_all_injected_groups(combinator_unit_number)
   local removed_count = logistics_utils.cleanup_combinator_groups(
     combinator_unit_number,
-    global.injected_groups
+    storage.injected_groups
   )
 
   log("Cleaned up " .. removed_count .. " injected groups from combinator " .. combinator_unit_number)
 
   -- Clear tracking data
-  for entity_id, sections in pairs(global.injected_groups) do
+  for entity_id, sections in pairs(storage.injected_groups) do
     for section_idx, comb_id in pairs(sections) do
       if comb_id == combinator_unit_number then
         sections[section_idx] = nil
@@ -371,7 +455,7 @@ function logistics_combinator.cleanup_all_injected_groups(combinator_unit_number
 
     -- Clean up empty entity tracking
     if not next(sections) then
-      global.injected_groups[entity_id] = nil
+      storage.injected_groups[entity_id] = nil
     end
   end
 end

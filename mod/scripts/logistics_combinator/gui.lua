@@ -12,14 +12,15 @@
 --
 -- DOES NOT OWN:
 -- - Generic GUI components (that's lib/gui_utils)
--- - GUI state storage (that's scripts/globals)
+-- - GUI state storage (that's scripts/mc_globals)
 -- - Entity business logic (that's scripts/logistics_combinator/init)
 
 local logistics_gui = {}
 
 -- Load dependencies
-local globals = require("scripts.globals")
+local mc_globals = require("scripts.mc_globals")
 local gui_utils = require("lib.gui_utils")
+local logistics_combinator = require("scripts.logistics_combinator.init")
 
 -- ==============================================================================
 -- GUI ELEMENT NAMES (for event routing)
@@ -30,10 +31,7 @@ local GUI_NAMES = {
   LOGISTICS_CLOSE = "logistics_close",
   LOGISTICS_ADD_RULE = "logistics_add_rule",
   LOGISTICS_RULE_PREFIX = "logistics_rule_",  -- Followed by rule index
-  LOGISTICS_DELETE_RULE = "logistics_delete_rule_",  -- Followed by rule index
-  LOGISTICS_GROUP_PICKER = "logistics_group_",  -- Followed by rule index
-  LOGISTICS_ACTION_INJECT = "logistics_action_inject_",  -- Followed by rule index
-  LOGISTICS_ACTION_REMOVE = "logistics_action_remove_"  -- Followed by rule index
+  LOGISTICS_DELETE_RULE = "logistics_delete_rule_"  -- Followed by rule index
 }
 
 -- ==============================================================================
@@ -52,8 +50,13 @@ function logistics_gui.create_gui(player, entity)
   logistics_gui.close_gui(player)
 
   -- Get combinator data
-  local combinator_data = globals.get_logistics_combinator(entity.unit_number)
+  local combinator_data = mc_globals.get_logistics_combinator(entity.unit_number)
   if not combinator_data then return end
+
+  -- Initialize rules if not present
+  if not combinator_data.rules then
+    combinator_data.rules = {}
+  end
 
   -- Create main GUI window
   local main_frame = player.gui.screen.add{
@@ -81,45 +84,58 @@ function logistics_gui.create_gui(player, entity)
   -- Header label
   content_flow.add{
     type = "label",
-    caption = {"logistics-combinator.circuit-controlled-groups"},
+    caption = {"logistics-combinator.controlled-groups"},
     style = "bold_label"
   }
 
-  -- Add rule button
-  local add_button_flow = content_flow.add{
-    type = "flow",
-    direction = "horizontal"
-  }
-  add_button_flow.add{
-    type = "button",
-    name = GUI_NAMES.LOGISTICS_ADD_RULE,
-    caption = {"logistics-combinator.add-rule"},
-    tooltip = {"logistics-combinator.add-rule-tooltip"}
+  -- Rules frame container
+  local rules_frame = content_flow.add{
+    type = "frame",
+    direction = "vertical",
+    style = "inside_deep_frame"
   }
 
-  -- Rules list
-  local rules_scroll = content_flow.add{
+  local rules_scroll = rules_frame.add{
     type = "scroll-pane",
-    direction = "vertical"
+    direction = "vertical",
+    style = "naked_scroll_pane"
   }
   rules_scroll.style.maximal_height = 400
-  rules_scroll.style.minimal_width = 500
+  rules_scroll.style.minimal_height = 150
+  rules_scroll.style.minimal_width = 600
 
   local rules_list = rules_scroll.add{
     type = "flow",
     name = "rules_list",
     direction = "vertical"
   }
-  rules_list.style.vertical_spacing = gui_utils.GUI_CONSTANTS.SPACING
+  rules_list.style.vertical_spacing = 8
+  rules_list.style.padding = 4
 
   -- Populate existing rules
-  for rule_idx, rule in ipairs(combinator_data.rules) do
-    logistics_gui.add_rule_to_gui(rules_list, rule_idx, rule)
+  if combinator_data.rules then
+    for rule_idx, rule in ipairs(combinator_data.rules) do
+      logistics_gui.add_rule_row(rules_list, rule_idx, rule)
+    end
   end
 
-  -- Connected entities count
-  local connected_count = #(combinator_data.connected_entities or {})
+  -- Add rule button
   content_flow.add{
+    type = "button",
+    name = GUI_NAMES.LOGISTICS_ADD_RULE,
+    caption = {"logistics-combinator.add-rule"},
+    tooltip = {"logistics-combinator.add-rule-tooltip"}
+  }
+
+  -- Connected entities count (bottom, spanning both columns)
+  local footer_flow = main_frame.add{
+    type = "flow",
+    direction = "vertical"
+  }
+  footer_flow.style.padding = gui_utils.GUI_CONSTANTS.PADDING
+
+  local connected_count = #(combinator_data.connected_entities or {})
+  footer_flow.add{
     type = "label",
     caption = {"logistics-combinator.connected-entities", connected_count}
   }
@@ -128,112 +144,171 @@ function logistics_gui.create_gui(player, entity)
   main_frame.force_auto_center()
 end
 
---- Add a rule display to the GUI
--- @param parent LuaGuiElement: Parent container
--- @param rule_index number: Index of this rule (1-based)
--- @param rule table: Rule definition
-function logistics_gui.add_rule_to_gui(parent, rule_index, rule)
-  local rule_frame = parent.add{
+--- Add a rule row to the rules list
+-- Each rule combines: logistics group + circuit condition + action
+-- @param parent LuaGuiElement: Parent flow to add rule to
+-- @param rule_index number: Index of this rule
+-- @param rule table: Rule data {group, condition, action, last_state}
+function logistics_gui.add_rule_row(parent, rule_index, rule)
+  -- Container for this rule
+  local rule_container = parent.add{
     type = "frame",
     direction = "vertical",
     style = "inside_shallow_frame"
   }
+  rule_container.style.padding = 8
 
-  local rule_flow = rule_frame.add{
+  -- Top row: Group selector and action selector
+  local top_row = rule_container.add{
     type = "flow",
     direction = "horizontal"
   }
-  rule_flow.style.horizontal_spacing = gui_utils.GUI_CONSTANTS.SPACING
-  rule_flow.style.vertical_align = "center"
+  top_row.style.horizontal_spacing = 8
+  top_row.style.vertical_align = "center"
 
-  -- Rule number label
-  rule_flow.add{
-    type = "label",
-    caption = tostring(rule_index) .. "."
-  }
-
-  -- Logistics group picker
-  rule_flow.add{
+  -- Group label
+  top_row.add{
     type = "label",
     caption = {"logistics-combinator.group-label"}
   }
 
-  local group_picker = rule_flow.add{
-    type = "choose-elem-button",
-    name = GUI_NAMES.LOGISTICS_GROUP_PICKER .. rule_index,
-    elem_type = "logistic-group",
-    tooltip = {"logistics-combinator.select-group-tooltip"}
-  }
+  -- Logistics group dropdown
+  -- Get available logistics groups from player's force
+  local player = parent.gui.player
+  local available_groups = player and player.valid and player.force.get_logistic_groups() or {}
 
-  -- Set current group if available
-  if rule.group_name then
-    group_picker.elem_value = rule.group_name
+  -- Add "None" option at the beginning
+  local group_items = {"(None)"}
+  for _, group_name in ipairs(available_groups) do
+    table.insert(group_items, group_name)
   end
 
-  -- Condition builder
-  rule_flow.add{
+  local group_dropdown = top_row.add{
+    type = "drop-down",
+    name = GUI_NAMES.LOGISTICS_RULE_PREFIX .. rule_index .. "_group",
+    items = group_items,
+    tooltip = {"logistics-combinator.group-tooltip"}
+  }
+  group_dropdown.style.width = 200
+
+  -- Set selected index if rule has a group
+  if rule and rule.group then
+    for i, group_name in ipairs(group_items) do
+      if group_name == rule.group then
+        group_dropdown.selected_index = i
+        break
+      end
+    end
+  else
+    group_dropdown.selected_index = 1  -- Default to "(None)"
+  end
+
+  -- Spacer
+  top_row.add{
+    type = "empty-widget",
+    style = "draggable_space"
+  }.style.horizontally_stretchable = true
+
+  -- Action label
+  top_row.add{
     type = "label",
-    caption = {"logistics-combinator.when-label"}
+    caption = {"logistics-combinator.action-label"}
   }
 
-  local condition_widgets = gui_utils.create_condition_selector(
-    rule_flow,
-    GUI_NAMES.LOGISTICS_RULE_PREFIX .. rule_index .. "_"
-  )
+  -- Action dropdown (inject/remove)
+  local action_dropdown = top_row.add{
+    type = "drop-down",
+    name = GUI_NAMES.LOGISTICS_RULE_PREFIX .. rule_index .. "_action",
+    items = {{"logistics-combinator.inject"}, {"logistics-combinator.remove"}},
+    selected_index = (rule and rule.action == "remove") and 2 or 1,
+    tooltip = {"logistics-combinator.action-tooltip"}
+  }
+  action_dropdown.style.width = 100
 
-  -- Set current condition values
-  if rule.condition then
-    if rule.condition.signal then
-      condition_widgets.signal_chooser.elem_value = rule.condition.signal
-    end
-    if rule.condition.operator then
-      local op_index = gui_utils.get_index_from_operator(rule.condition.operator)
-      condition_widgets.operator_dropdown.selected_index = op_index
-    end
-    if rule.condition.value then
-      condition_widgets.value_field.text = tostring(rule.condition.value)
-    end
-  end
-
-  -- Action radio buttons
-  local action_flow = rule_flow.add{
+  -- Bottom row: Condition
+  local bottom_row = rule_container.add{
     type = "flow",
     direction = "horizontal"
   }
-  action_flow.style.horizontal_spacing = 4
+  bottom_row.style.horizontal_spacing = 8
+  bottom_row.style.vertical_align = "center"
+  bottom_row.style.top_margin = 4
 
-  action_flow.add{
-    type = "radiobutton",
-    name = GUI_NAMES.LOGISTICS_ACTION_INJECT .. rule_index,
-    caption = {"logistics-combinator.inject"},
-    state = (rule.action == "inject"),
-    tooltip = {"logistics-combinator.inject-tooltip"}
+  -- Condition label
+  bottom_row.add{
+    type = "label",
+    caption = {"logistics-combinator.condition-label"}
   }
 
-  action_flow.add{
-    type = "radiobutton",
-    name = GUI_NAMES.LOGISTICS_ACTION_REMOVE .. rule_index,
-    caption = {"logistics-combinator.remove"},
-    state = (rule.action == "remove"),
-    tooltip = {"logistics-combinator.remove-tooltip"}
+  -- Signal chooser
+  local signal_chooser = bottom_row.add{
+    type = "choose-elem-button",
+    name = GUI_NAMES.LOGISTICS_RULE_PREFIX .. rule_index .. "_signal",
+    elem_type = "signal",
+    tooltip = {"logistics-combinator.signal-tooltip"}
   }
+
+  if rule and rule.condition and rule.condition.signal then
+    signal_chooser.elem_value = rule.condition.signal
+  end
+
+  -- Operator dropdown
+  local operator_dropdown = bottom_row.add{
+    type = "drop-down",
+    name = GUI_NAMES.LOGISTICS_RULE_PREFIX .. rule_index .. "_operator",
+    items = {},
+    tooltip = {"logistics-combinator.operator-tooltip"}
+  }
+  operator_dropdown.style.width = 60
+  gui_utils.populate_operator_dropdown(operator_dropdown)
+
+  if rule and rule.condition and rule.condition.operator then
+    local op_index = gui_utils.get_index_from_operator(rule.condition.operator)
+    operator_dropdown.selected_index = op_index
+  else
+    operator_dropdown.selected_index = 1
+  end
+
+  -- Value field
+  local value_field = bottom_row.add{
+    type = "textfield",
+    name = GUI_NAMES.LOGISTICS_RULE_PREFIX .. rule_index .. "_value",
+    text = "0",
+    numeric = true,
+    allow_negative = true,
+    tooltip = {"logistics-combinator.value-tooltip"}
+  }
+  value_field.style.width = 80
+
+  if rule and rule.condition and rule.condition.value then
+    value_field.text = tostring(rule.condition.value)
+  end
+
+  -- Spacer
+  bottom_row.add{
+    type = "empty-widget",
+    style = "draggable_space"
+  }.style.horizontally_stretchable = true
+
+  -- Status indicator (shows if rule is currently active)
+  local status_label = bottom_row.add{
+    type = "label",
+    caption = (rule and rule.last_state) and {"logistics-combinator.active"} or {"logistics-combinator.inactive"},
+    tooltip = {"logistics-combinator.status-tooltip"}
+  }
+  status_label.style.font = "default-small"
+  status_label.style.font_color = (rule and rule.last_state) and {r=0, g=1, b=0} or {r=0.5, g=0.5, b=0.5}
 
   -- Delete button
-  rule_flow.add{
+  bottom_row.add{
     type = "sprite-button",
     name = GUI_NAMES.LOGISTICS_DELETE_RULE .. rule_index,
     sprite = "utility/trash",
     style = "tool_button_red",
     tooltip = {"logistics-combinator.delete-rule"}
   }
-
-  -- Status indicator (active/inactive based on last_state)
-  local status_text = rule.last_state and "[img=utility/status_working]" or "[img=utility/status_not_working]"
-  rule_frame.add{
-    type = "label",
-    caption = status_text .. " " .. (rule.last_state and {"logistics-combinator.active"} or {"logistics-combinator.inactive"})
-  }
 end
+
 
 --- Close logistics combinator GUI for a player
 -- @param player LuaPlayer: Player whose GUI to close
@@ -255,6 +330,13 @@ function logistics_gui.on_opened(player, entity)
   if entity.name ~= "logistics-combinator" then return end
 
   logistics_gui.create_gui(player, entity)
+
+  -- Override vanilla GUI with our custom GUI
+  -- This prevents the vanilla decider combinator GUI from appearing
+  local main_frame = player.gui.screen[GUI_NAMES.LOGISTICS_MAIN]
+  if main_frame and main_frame.valid then
+    player.opened = main_frame
+  end
 end
 
 --- Handle GUI closed event for logistics combinator
@@ -274,7 +356,6 @@ function logistics_gui.on_closed(player, element)
 
   -- Trigger rule processing for this combinator
   if entity_unit_number then
-    local logistics_combinator = require("scripts.logistics_combinator.init")
     logistics_combinator.process_rules(entity_unit_number)
   end
 end
@@ -303,18 +384,13 @@ function logistics_gui.on_click(event)
 
   -- Delete rule button
   if name:find("^" .. GUI_NAMES.LOGISTICS_DELETE_RULE) then
-    local rule_index = tonumber(name:match("%d+$"))
+    local rule_index = tonumber(name:match("_(%d+)"))
     if rule_index then
       logistics_gui.delete_rule(player, rule_index)
     end
     return
   end
 
-  -- Action radio buttons
-  if name:find("^" .. GUI_NAMES.LOGISTICS_ACTION_INJECT) or name:find("^" .. GUI_NAMES.LOGISTICS_ACTION_REMOVE) then
-    logistics_gui.update_rule_action(player, element)
-    return
-  end
 end
 
 --- Handle GUI element changed event
@@ -325,14 +401,10 @@ function logistics_gui.on_elem_changed(event)
 
   if not element or not element.valid then return end
 
-  -- Group picker changed
-  if element.name:find("^" .. GUI_NAMES.LOGISTICS_GROUP_PICKER) then
-    logistics_gui.update_rule_group(player, element)
-  end
-
   -- Signal chooser changed (condition)
-  if element.name:find("signal$") then
-    logistics_gui.update_rule_condition(player, element)
+  if element.name:find("_signal$") then
+    logistics_gui.update_rule_signal(player, element)
+    return
   end
 end
 
@@ -344,9 +416,10 @@ function logistics_gui.on_text_changed(event)
 
   if not element or not element.valid then return end
 
-  -- Value field changed (condition)
-  if element.name:find("value$") then
-    logistics_gui.update_rule_condition(player, element)
+  -- Value field changed (condition value)
+  if element.name:find("_value$") then
+    logistics_gui.update_rule_value(player, element)
+    return
   end
 end
 
@@ -358,9 +431,22 @@ function logistics_gui.on_selection_changed(event)
 
   if not element or not element.valid then return end
 
-  -- Operator dropdown changed (condition)
-  if element.name:find("operator$") then
-    logistics_gui.update_rule_condition(player, element)
+  -- Group dropdown changed
+  if element.name:find("_group$") then
+    logistics_gui.update_rule_group(player, element)
+    return
+  end
+
+  -- Operator dropdown changed
+  if element.name:find("_operator$") then
+    logistics_gui.update_rule_operator(player, element)
+    return
+  end
+
+  -- Action dropdown changed
+  if element.name:find("_action$") then
+    logistics_gui.update_rule_action(player, element)
+    return
   end
 end
 
@@ -380,7 +466,7 @@ function logistics_gui.add_new_rule(player)
 
   -- Create new rule with defaults
   local new_rule = {
-    group_name = nil,
+    group = nil,  -- No group selected initially
     condition = {
       signal = {type = "virtual", name = "signal-A"},
       operator = ">",
@@ -391,10 +477,11 @@ function logistics_gui.add_new_rule(player)
   }
 
   -- Add to combinator data
-  local combinator_data = globals.get_logistics_combinator(entity_unit_number)
+  local combinator_data = mc_globals.get_logistics_combinator(entity_unit_number)
   if combinator_data then
-    -- Initialize last_state for edge triggering
-    new_rule.last_state = false
+    if not combinator_data.rules then
+      combinator_data.rules = {}
+    end
     table.insert(combinator_data.rules, new_rule)
   end
 
@@ -414,8 +501,8 @@ function logistics_gui.delete_rule(player, rule_index)
   if not entity_unit_number then return end
 
   -- Remove from combinator data
-  local combinator_data = globals.get_logistics_combinator(entity_unit_number)
-  if combinator_data and rule_index > 0 and rule_index <= #combinator_data.rules then
+  local combinator_data = mc_globals.get_logistics_combinator(entity_unit_number)
+  if combinator_data and combinator_data.rules and rule_index > 0 and rule_index <= #combinator_data.rules then
     table.remove(combinator_data.rules, rule_index)
   end
 
@@ -423,88 +510,148 @@ function logistics_gui.delete_rule(player, rule_index)
   logistics_gui.refresh_gui(player, entity_unit_number)
 end
 
---- Update rule group selection
+--- Update rule operator
 -- @param player LuaPlayer: Player making the change
--- @param element LuaGuiElement: Group picker element
-function logistics_gui.update_rule_group(player, element)
-  -- Get entity unit_number from open GUI element
+-- @param element LuaGuiElement: Operator dropdown element
+function logistics_gui.update_rule_operator(player, element)
+  if not player or not element or not element.valid then return end
+
   local main_frame = player.gui.screen[GUI_NAMES.LOGISTICS_MAIN]
   if not main_frame or not main_frame.tags then return end
 
   local entity_unit_number = main_frame.tags.entity_unit_number
   if not entity_unit_number then return end
 
-  local rule_index = tonumber(element.name:match("%d+$"))
+  -- Parse rule index from element name: logistics_rule_X_operator
+  local rule_index = tonumber(element.name:match("(%d+)_operator$"))
   if not rule_index then return end
 
-  local combinator_data = globals.get_logistics_combinator(entity_unit_number)
-  if not combinator_data or not combinator_data.rules[rule_index] then return end
+  local combinator_data = mc_globals.get_logistics_combinator(entity_unit_number)
+  if not combinator_data or not combinator_data.rules or not combinator_data.rules[rule_index] then return end
 
-  -- Update rule
-  combinator_data.rules[rule_index].group_name = element.elem_value
+  -- Update condition operator
+  if not combinator_data.rules[rule_index].condition then
+    combinator_data.rules[rule_index].condition = {}
+  end
+  combinator_data.rules[rule_index].condition.operator = gui_utils.get_operator_from_index(element.selected_index)
 end
 
---- Update rule action (inject/remove)
+--- Update rule value
 -- @param player LuaPlayer: Player making the change
--- @param element LuaGuiElement: Radio button element
+-- @param element LuaGuiElement: Value textfield element
+function logistics_gui.update_rule_value(player, element)
+  if not player or not element or not element.valid then return end
+
+  local main_frame = player.gui.screen[GUI_NAMES.LOGISTICS_MAIN]
+  if not main_frame or not main_frame.tags then return end
+
+  local entity_unit_number = main_frame.tags.entity_unit_number
+  if not entity_unit_number then return end
+
+  -- Parse rule index from element name: logistics_rule_X_value
+  local rule_index = tonumber(element.name:match("(%d+)_value$"))
+  if not rule_index then return end
+
+  local combinator_data = mc_globals.get_logistics_combinator(entity_unit_number)
+  if not combinator_data or not combinator_data.rules or not combinator_data.rules[rule_index] then return end
+
+  -- Update condition value
+  if not combinator_data.rules[rule_index].condition then
+    combinator_data.rules[rule_index].condition = {}
+  end
+  combinator_data.rules[rule_index].condition.value = tonumber(element.text) or 0
+end
+
+--- Update rule action
+-- @param player LuaPlayer: Player making the change
+-- @param element LuaGuiElement: Action dropdown element
 function logistics_gui.update_rule_action(player, element)
-  -- Get entity unit_number from open GUI element
+  if not player or not element or not element.valid then return end
+
   local main_frame = player.gui.screen[GUI_NAMES.LOGISTICS_MAIN]
   if not main_frame or not main_frame.tags then return end
 
   local entity_unit_number = main_frame.tags.entity_unit_number
   if not entity_unit_number then return end
 
-  local rule_index = tonumber(element.name:match("%d+$"))
+  -- Parse rule index from element name: logistics_rule_X_action
+  local rule_index = tonumber(element.name:match("(%d+)_action$"))
   if not rule_index then return end
 
-  local combinator_data = globals.get_logistics_combinator(entity_unit_number)
-  if not combinator_data or not combinator_data.rules[rule_index] then return end
+  local combinator_data = mc_globals.get_logistics_combinator(entity_unit_number)
+  if not combinator_data or not combinator_data.rules or not combinator_data.rules[rule_index] then return end
 
-  -- Determine action from element name
-  local action = nil
-  if element.name:find(GUI_NAMES.LOGISTICS_ACTION_INJECT) then
-    action = "inject"
-  elseif element.name:find(GUI_NAMES.LOGISTICS_ACTION_REMOVE) then
-    action = "remove"
+  -- Update action (1=inject, 2=remove)
+  combinator_data.rules[rule_index].action = (element.selected_index == 2) and "remove" or "inject"
+end
+
+--- Update rule logistics group
+-- @param player LuaPlayer: Player making the change
+-- @param element LuaGuiElement: Group chooser element
+function logistics_gui.update_rule_group(player, element)
+  if not player or not element or not element.valid then return end
+
+  local main_frame = player.gui.screen[GUI_NAMES.LOGISTICS_MAIN]
+  if not main_frame or not main_frame.tags then return end
+
+  local entity_unit_number = main_frame.tags.entity_unit_number
+  if not entity_unit_number then return end
+
+  -- Parse rule index from element name: logistics_rule_X_group
+  local rule_index = tonumber(element.name:match("(%d+)_group$"))
+  if not rule_index then return end
+
+  local combinator_data = mc_globals.get_logistics_combinator(entity_unit_number)
+  if not combinator_data or not combinator_data.rules then return end
+
+  -- Get selected group name from dropdown
+  local selected_index = element.selected_index
+  if not selected_index or selected_index == 0 then return end
+
+  local group_name = element.get_item(selected_index)
+
+  -- Handle "(None)" selection
+  if group_name == "(None)" then
+    group_name = nil
   end
 
-  if action then
-    combinator_data.rules[rule_index].action = action
-
-    -- Update radio buttons
-    logistics_gui.refresh_gui(player, entity_unit_number)
+  -- Update rule data
+  if not combinator_data.rules[rule_index] then
+    combinator_data.rules[rule_index] = {
+      group = group_name,
+      condition = {signal = {type = "virtual", name = "signal-A"}, operator = ">", value = 0},
+      action = "inject",
+      last_state = false
+    }
+  else
+    combinator_data.rules[rule_index].group = group_name
   end
 end
 
---- Update rule condition
+--- Update rule signal
 -- @param player LuaPlayer: Player making the change
--- @param element LuaGuiElement: Condition element that changed
-function logistics_gui.update_rule_condition(player, element)
-  -- Get entity unit_number from open GUI element
+-- @param element LuaGuiElement: Signal chooser element
+function logistics_gui.update_rule_signal(player, element)
+  if not player or not element or not element.valid then return end
+
   local main_frame = player.gui.screen[GUI_NAMES.LOGISTICS_MAIN]
   if not main_frame or not main_frame.tags then return end
 
   local entity_unit_number = main_frame.tags.entity_unit_number
   if not entity_unit_number then return end
 
-  -- Extract rule index from element name
-  local rule_index = tonumber(element.name:match("rule_(%d+)_"))
+  -- Parse rule index from element name: logistics_rule_X_signal
+  local rule_index = tonumber(element.name:match("(%d+)_signal$"))
   if not rule_index then return end
 
-  local combinator_data = globals.get_logistics_combinator(entity_unit_number)
-  if not combinator_data or not combinator_data.rules[rule_index] then return end
+  local combinator_data = mc_globals.get_logistics_combinator(entity_unit_number)
+  if not combinator_data or not combinator_data.rules or not combinator_data.rules[rule_index] then return end
 
-  local rule = combinator_data.rules[rule_index]
-
-  -- Update condition based on which element changed
-  if element.name:find("signal$") then
-    rule.condition.signal = element.elem_value
-  elseif element.name:find("operator$") then
-    rule.condition.operator = gui_utils.get_operator_from_index(element.selected_index)
-  elseif element.name:find("value$") then
-    rule.condition.value = tonumber(element.text) or 0
+  -- Update condition signal
+  if not combinator_data.rules[rule_index].condition then
+    combinator_data.rules[rule_index].condition = {}
   end
+  combinator_data.rules[rule_index].condition.signal = element.elem_value
 end
 
 --- Refresh GUI with current data
@@ -515,7 +662,7 @@ function logistics_gui.refresh_gui(player, entity_unit_number)
   if not player or not player.valid then return end
 
   -- Get combinator data from global (has surface_index and position)
-  local combinator_data = global.logistics_combinators and global.logistics_combinators[entity_unit_number]
+  local combinator_data = storage.logistics_combinators and storage.logistics_combinators[entity_unit_number]
   if not combinator_data then return end
 
   -- Find entity using stored location (O(1) lookup)

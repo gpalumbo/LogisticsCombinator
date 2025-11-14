@@ -27,6 +27,137 @@ This document defines EXACTLY what belongs in each module, what doesn't belong, 
 
 ---
 
+## 🚨 CRITICAL: Factorio 2.0 API Migration Guide 🚨
+
+### Wire Events DO NOT EXIST
+**IMPORTANT:** The following events **NEVER EXISTED** in Factorio's API and were mistakenly referenced in our code:
+- `defines.events.on_wire_created` ❌ DOES NOT EXIST
+- `defines.events.on_wire_removed` ❌ DOES NOT EXIST
+- `defines.events.on_wire_added` ❌ DOES NOT EXIST
+- `defines.events.on_wire_disconnected` ❌ DOES NOT EXIST
+
+**Why no wire events?** Factorio developers rejected this feature request because connecting/disconnecting networks destroys and recreates networks, which would trigger cascading events for every entity on the network.
+
+**Solution:** Use **POLLING** instead:
+- Connection discovery: `on_nth_tick(60)` checks for new wire connections
+- Rule processing: `on_tick` processes rules and checks connections when conditions change
+
+See: https://forums.factorio.com/viewtopic.php?t=46375
+
+### Persistent Storage: `global` → `storage`
+
+**CRITICAL CHANGE:** In Factorio 2.0, the persistent mod data table was renamed from `global` to `storage`.
+
+**Factorio 1.1 (OLD):**
+```lua
+global.my_data = {}
+global.logistics_combinators[unit_number] = {...}
+```
+
+**Factorio 2.0 (NEW):**
+```lua
+storage.my_data = {}
+storage.logistics_combinators[unit_number] = {...}
+```
+
+**Why the change?** The name "global" was confusing because:
+1. It collided with Lua's `_G` global namespace concept
+2. It wasn't clear that this was persistent storage (survives save/load)
+3. "storage" better describes its purpose: persistent mod data
+
+**Reference:** https://lua-api.factorio.com/latest/auxiliary/storage.html
+
+**In our mod:**
+- ✅ `storage.logistics_combinators` - Persistent combinator data
+- ✅ `storage.injected_groups` - Track which groups we injected
+- ✅ `mc_globals` module manages the `storage` table
+
+**DO NOT confuse with:**
+- `settings.global` - Runtime mod settings (different system entirely)
+- `_G` - Lua's global namespace (not persistent, not recommended)
+
+### Circuit Network API Changes (1.1 → 2.0)
+
+Factorio 2.0 introduced `wire_connector_id` to replace separate `wire_type` and `circuit_connector_id` parameters.
+
+#### API Migration Table
+
+| Factorio 1.1 (OLD) | Factorio 2.0 (NEW) |
+|--------------------|--------------------|
+| `entity.get_circuit_network(defines.wire_type.red, defines.circuit_connector_id.combinator_input)` | `entity.get_circuit_network(defines.wire_connector_id.combinator_input_red)` |
+| `entity.get_circuit_network(defines.wire_type.green, defines.circuit_connector_id.combinator_input)` | `entity.get_circuit_network(defines.wire_connector_id.combinator_input_green)` |
+| `entity.get_circuit_network(defines.wire_type.red, defines.circuit_connector_id.combinator_output)` | `entity.get_circuit_network(defines.wire_connector_id.combinator_output_red)` |
+| `entity.circuit_connected_entities` | `entity.get_wire_connectors()` → iterate `wire_connector.real_connections` |
+
+#### Wire Connector IDs (2.0)
+
+```lua
+defines.wire_connector_id.circuit_red             -- Generic red circuit connector
+defines.wire_connector_id.circuit_green           -- Generic green circuit connector
+defines.wire_connector_id.combinator_input_red    -- Combinator red input
+defines.wire_connector_id.combinator_input_green  -- Combinator green input
+defines.wire_connector_id.combinator_output_red   -- Combinator red output
+defines.wire_connector_id.combinator_output_green -- Combinator green output
+```
+
+#### Finding Connected Entities (2.0)
+
+**OLD (1.1):**
+```lua
+local connected = entity.circuit_connected_entities
+for _, e in pairs(connected.red or {}) do
+  -- Process entities on red network
+end
+for _, e in pairs(connected.green or {}) do
+  -- Process entities on green network
+end
+```
+
+**NEW (2.0):**
+```lua
+local wire_connectors = entity.get_wire_connectors(false)
+for connector_id, wire_connector in pairs(wire_connectors) do
+  for _, connected_connector in pairs(wire_connector.real_connections) do
+    local connected_entity = connected_connector.owner
+    -- Process connected entity
+  end
+end
+```
+
+#### Reading Circuit Signals (2.0)
+
+**OLD (1.1):**
+```lua
+local network = entity.get_circuit_network(defines.wire_type.red, defines.circuit_connector_id.combinator_input)
+```
+
+**NEW (2.0):**
+```lua
+local network = entity.get_circuit_network(defines.wire_connector_id.combinator_input_red)
+```
+
+### control_behavior and Circuit Networks
+
+**Q: Does `control_behavior` help with circuit network operations?**
+
+**A: Partially, but not significantly:**
+
+`control_behavior.get_circuit_network(wire_connector_id)` provides the same functionality as `entity.get_circuit_network(wire_connector_id)` - they're just different API paths to the same data.
+
+**What control_behavior CAN do:**
+- Access circuit networks (same as entity API)
+- Read combinator output history (`signals_last_tick`)
+- Configure vanilla combinator parameters
+
+**What control_behavior CANNOT do:**
+- Detect when circuit connections change (requires polling)
+- Detect when input signals change (requires polling)
+- Provide any events or callbacks (no events exist!)
+
+**Recommendation:** Use `entity.get_circuit_network()` directly unless you're already using `control_behavior` for other purposes.
+
+---
+
 ## LIB Modules (Pure Utilities)
 
 ### lib/signal_utils.lua

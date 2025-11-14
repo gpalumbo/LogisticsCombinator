@@ -60,13 +60,17 @@ end
 
 --- Read signals from entity circuit connector
 --- @param entity LuaEntity: Entity to read from
---- @param wire_type defines.wire_type: RED or GREEN
---- @param connector_id defines.circuit_connector_id: Which connector (default: combinator_input)
+--- @param wire_connector_id defines.wire_connector_id: Which wire connector (e.g., combinator_input_red)
 --- @return table|nil: Signal table {[signal_id] = count} or nil if no connection
+---
+--- FACTORIO 2.0 API:
+---   Uses wire_connector_id (combines wire type + location) instead of separate parameters
+---   Examples: defines.wire_connector_id.combinator_input_red, combinator_input_green,
+---            combinator_output_red, combinator_output_green, circuit_red, circuit_green
 ---
 --- EDGE CASES:
 ---   - Returns nil if entity is invalid
----   - Returns nil if no circuit network on specified wire
+---   - Returns nil if no circuit network on specified wire connector
 ---   - Returns empty table if network exists but has no signals
 ---   - Handles multi-connector entities (combinators, power switches, etc.)
 ---
@@ -77,19 +81,16 @@ end
 ---   }
 ---
 --- TEST CASES:
----   get_circuit_signals(nil, red, input) => nil
----   get_circuit_signals(unwired_combinator, red, input) => nil
----   get_circuit_signals(wired_combinator, red, input) => {...}
-function circuit_utils.get_circuit_signals(entity, wire_type, connector_id)
+---   get_circuit_signals(nil, combinator_input_red) => nil
+---   get_circuit_signals(unwired_combinator, combinator_input_red) => nil
+---   get_circuit_signals(wired_combinator, combinator_input_red) => {...}
+function circuit_utils.get_circuit_signals(entity, wire_connector_id)
   if not circuit_utils.is_valid_circuit_entity(entity) then
     return nil
   end
 
-  -- Default to combinator input connector if not specified
-  connector_id = connector_id or defines.circuit_connector_id.combinator_input
-
-  -- Get the circuit network for this wire type and connector
-  local circuit_network = entity.get_circuit_network(wire_type, connector_id)
+  -- Get the circuit network for this wire connector (Factorio 2.0 API)
+  local circuit_network = entity.get_circuit_network(wire_connector_id)
 
   if not circuit_network then
     return nil
@@ -137,37 +138,41 @@ end
 -- CONNECTION STATUS
 --------------------------------------------------------------------------------
 
---- Check if entity has circuit connection on specified wire
+--- Check if entity has any circuit connection
 --- @param entity LuaEntity: Entity to check
---- @param wire_type defines.wire_type: RED or GREEN
---- @return boolean: True if connected
+--- @return boolean: True if has any circuit connection (red or green, any connector)
+---
+--- FACTORIO 2.0 API:
+---   Checks all common wire_connector_id values to detect any circuit connection
+---   Returns true if ANY wire connector has a network
 ---
 --- EDGE CASES:
 ---   - Returns false if entity is invalid
 ---   - Returns false if entity doesn't support circuits
----   - Returns true only if network exists and is connected
+---   - Returns true if any wire connector has a network
 ---
 --- TEST CASES:
----   has_circuit_connection(nil, red) => false
----   has_circuit_connection(unwired_entity, red) => false
----   has_circuit_connection(wired_entity, red) => true
-function circuit_utils.has_circuit_connection(entity, wire_type)
+---   has_circuit_connection(nil) => false
+---   has_circuit_connection(unwired_entity) => false
+---   has_circuit_connection(red_wired_entity) => true
+---   has_circuit_connection(green_wired_entity) => true
+function circuit_utils.has_circuit_connection(entity)
   if not circuit_utils.is_valid_circuit_entity(entity) then
     return false
   end
 
-  -- Check all possible connector IDs (some entities have multiple)
-  -- Most entities use combinator_input/output, but check common ones
-  local connector_ids = {
-    defines.circuit_connector_id.combinator_input,
-    defines.circuit_connector_id.combinator_output,
-    defines.circuit_connector_id.constant_combinator,
-    defines.circuit_connector_id.container,
-    defines.circuit_connector_id.inserter,
+  -- Check all common wire connector IDs (Factorio 2.0 API)
+  local wire_connector_ids = {
+    defines.wire_connector_id.circuit_red,
+    defines.wire_connector_id.circuit_green,
+    defines.wire_connector_id.combinator_input_red,
+    defines.wire_connector_id.combinator_input_green,
+    defines.wire_connector_id.combinator_output_red,
+    defines.wire_connector_id.combinator_output_green,
   }
 
-  for _, connector_id in pairs(connector_ids) do
-    local circuit_network = entity.get_circuit_network(wire_type, connector_id)
+  for _, wire_connector_id in pairs(wire_connector_ids) do
+    local circuit_network = entity.get_circuit_network(wire_connector_id)
     if circuit_network then
       return true
     end
@@ -203,18 +208,21 @@ end
 
 --- Get number of unique signals on entity's circuit network
 --- @param entity LuaEntity: Entity to check
---- @param wire_type defines.wire_type: RED or GREEN
+--- @param wire_connector_id defines.wire_connector_id: Which wire connector to check
 --- @return number: Count of unique signals
+---
+--- FACTORIO 2.0 API:
+---   Requires specific wire_connector_id (e.g., combinator_input_red)
 ---
 --- EDGE CASES:
 ---   - Returns 0 if entity is invalid
 ---   - Returns 0 if no circuit connection
 ---
 --- TEST CASES:
----   get_signal_count(nil, red) => 0
----   get_signal_count(combinator, red) => 5 (if 5 signals present)
-function circuit_utils.get_signal_count(entity, wire_type)
-  local signals = circuit_utils.get_circuit_signals(entity, wire_type)
+---   get_signal_count(nil, combinator_input_red) => 0
+---   get_signal_count(combinator, combinator_input_red) => 5 (if 5 signals present)
+function circuit_utils.get_signal_count(entity, wire_connector_id)
+  local signals = circuit_utils.get_circuit_signals(entity, wire_connector_id)
   if not signals then return 0 end
 
   local count = 0
@@ -229,14 +237,15 @@ end
 --- @param entity LuaEntity: Entity to check
 --- @return boolean: True if has any circuit connection
 ---
+--- NOTE: This is an alias for has_circuit_connection() for backwards compatibility
+---
 --- TEST CASES:
 ---   has_any_circuit_connection(nil) => false
 ---   has_any_circuit_connection(unwired) => false
 ---   has_any_circuit_connection(red_wired) => true
 ---   has_any_circuit_connection(green_wired) => true
 function circuit_utils.has_any_circuit_connection(entity)
-  return circuit_utils.has_circuit_connection(entity, defines.wire_type.red) or
-         circuit_utils.has_circuit_connection(entity, defines.wire_type.green)
+  return circuit_utils.has_circuit_connection(entity)
 end
 
 --------------------------------------------------------------------------------

@@ -67,11 +67,11 @@ function create_titlebar(parent, title, close_button_name)
     style = "draggable_space_header"
   }.style.horizontally_stretchable = true
 
-  -- Close button
+  -- Close button (Factorio 2.0: "utility/close" not "utility/close_white")
   titlebar.add{
     type = "sprite-button",
     name = close_button_name,
-    sprite = "utility/close_white",
+    sprite = "utility/close",
     style = "frame_action_button",
     tooltip = {"gui.close"}
   }
@@ -308,10 +308,12 @@ end
 -- @param signal table: {type = "item"|"fluid"|"virtual", name = "signal-name"}
 -- @return string: Key for signal table lookup
 function get_signal_key(signal)
-  if not signal or not signal.name then return "" end
-  -- For simplicity, use name as key. In real implementation, may need type prefix
-  -- to distinguish between item/fluid/virtual signals with same name
-  return signal.type .. ":" .. signal.name
+  if not signal then return "" end
+  if not signal.name then return "" end
+
+  -- Use both type and name for unique key (handles item vs fluid with same name)
+  local sig_type = signal.type or "unknown"
+  return sig_type .. ":" .. signal.name
 end
 
 -- ==============================================================================

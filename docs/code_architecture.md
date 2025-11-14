@@ -881,7 +881,7 @@ Examples:
 -- control.lua (main entry point)
 
 -- Import all modules
-require("scripts.globals")
+require("scripts.mc_globals")
 require("scripts.mission_control")
 require("scripts.receiver_combinator")
 require("scripts.logistics_combinator")

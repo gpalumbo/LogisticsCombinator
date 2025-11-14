@@ -152,9 +152,10 @@ end
 
 **Operation Logic:**
 ```lua
--- Every 15 ticks check all rules:
-local output_network = entity.get_circuit_network(defines.wire_type.red/green, defines.circuit_connector_id.combinator_output)
-local connected_entities = find_logistics_entities_on_network(output_network)
+-- Every tick check all rules (like vanilla combinators):
+-- Use Factorio 2.0 LuaWireConnector API to find connected entities
+local wire_connectors = entity.get_wire_connectors(false)
+local connected_entities = find_logistics_entities_via_wire_connectors(wire_connectors)
 
 for each rule in combinator_rules do
   local condition_met = evaluate_condition(input_signals, rule.condition)
