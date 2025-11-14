@@ -31,6 +31,92 @@ local signal_utils = require("lib.signal_utils")
 local logistics_gui = nil
 
 -- ==============================================================================
+-- MODULE-LOCAL ENTITY CACHE (Performance Optimization)
+-- ==============================================================================
+-- CRITICAL: These caches are NOT serialized in global. They are rebuilt on_load.
+-- Global state stores surface_index + position for reconstruction.
+-- This avoids O(n²) entity lookups that would cause severe performance issues.
+
+--- Cache of combinator entities by unit_number
+-- @type table<number, LuaEntity>
+local combinator_entity_cache = {}
+
+--- Cache of connected entities by unit_number
+-- @type table<number, LuaEntity>
+local connected_entity_cache = {}
+
+--- Clear all entity caches (called on_load)
+local function clear_entity_caches()
+  combinator_entity_cache = {}
+  connected_entity_cache = {}
+end
+
+--- Get combinator entity by unit_number (uses cache, O(1) after first lookup)
+-- @param unit_number number: Combinator unit_number
+-- @return LuaEntity|nil: Combinator entity or nil if not found/invalid
+local function get_combinator_entity(unit_number)
+  -- Check cache first
+  local cached = combinator_entity_cache[unit_number]
+  if cached and cached.valid then
+    return cached
+  end
+
+  -- Cache miss - need to find entity
+  if not global.logistics_combinators or not global.logistics_combinators[unit_number] then
+    return nil
+  end
+
+  local data = global.logistics_combinators[unit_number]
+  local surface_index = data.surface_index
+  local position = data.position
+
+  if not surface_index or not position then
+    return nil
+  end
+
+  local surface = game.surfaces[surface_index]
+  if not surface then
+    return nil
+  end
+
+  -- Find entity at stored position
+  local entity = surface.find_entity("logistics-combinator", position)
+
+  if entity and entity.valid and entity.unit_number == unit_number then
+    -- Cache for next time
+    combinator_entity_cache[unit_number] = entity
+    return entity
+  end
+
+  return nil
+end
+
+--- Get any entity by unit_number (uses cache, O(1) after first lookup)
+-- @param unit_number number: Entity unit_number
+-- @return LuaEntity|nil: Entity or nil if not found/invalid
+local function get_entity_by_unit_number(unit_number)
+  -- Check cache first
+  local cached = connected_entity_cache[unit_number]
+  if cached and cached.valid then
+    return cached
+  end
+
+  -- Cache miss - need to search
+  -- This is still expensive, but only happens once per entity
+  for _, surface in pairs(game.surfaces) do
+    for _, entity in pairs(surface.find_entities_filtered{}) do
+      if entity.valid and entity.unit_number == unit_number then
+        -- Cache for next time
+        connected_entity_cache[unit_number] = entity
+        return entity
+      end
+    end
+  end
+
+  return nil
+end
+
+-- ==============================================================================
 -- ENTITY LIFECYCLE
 -- ==============================================================================
 
@@ -48,9 +134,14 @@ function logistics_combinator.on_built(entity, player)
   global.logistics_combinators = global.logistics_combinators or {}
   global.logistics_combinators[unit_number] = {
     entity_unit_number = unit_number,
+    surface_index = entity.surface.index,  -- Store for entity reconstruction
+    position = entity.position,            -- Store for entity reconstruction
     rules = {},
     connected_entities = {}
   }
+
+  -- Cache entity immediately
+  combinator_entity_cache[unit_number] = entity
 
   -- Initialize connected entities cache
   logistics_combinator.update_connected_entities(unit_number)
@@ -69,27 +160,15 @@ function logistics_combinator.on_removed(entity)
   local unit_number = entity.unit_number
 
   -- Cleanup: Remove all groups injected by this combinator
+  -- This also handles tracking cleanup internally
   logistics_combinator.cleanup_all_injected_groups(unit_number)
+
+  -- Clear from entity cache
+  combinator_entity_cache[unit_number] = nil
 
   -- Unregister from global state
   if global.logistics_combinators then
     global.logistics_combinators[unit_number] = nil
-  end
-
-  -- Clean up injected groups tracking
-  if global.injected_groups then
-    for entity_id, sections in pairs(global.injected_groups) do
-      for section_idx, comb_id in pairs(sections) do
-        if comb_id == unit_number then
-          sections[section_idx] = nil
-        end
-      end
-
-      -- Clean up empty entity entries
-      if not next(sections) then
-        global.injected_groups[entity_id] = nil
-      end
-    end
   end
 
   log("Logistics combinator removed: " .. unit_number)
@@ -101,27 +180,15 @@ end
 
 --- Find and cache all logistics-enabled entities connected to combinator output
 -- Uses Factorio's circuit_connected_entities API to find entities on output network
+-- PERFORMANCE: Now uses entity cache, O(1) lookup instead of O(n²) search
 -- @param unit_number number: Combinator unit_number
 function logistics_combinator.update_connected_entities(unit_number)
   if not global.logistics_combinators then return end
   local combinator_data = global.logistics_combinators[unit_number]
   if not combinator_data then return end
 
-  -- Get the entity
-  local entity = nil
-  for _, surface in pairs(game.surfaces) do
-    local found = surface.find_entities_filtered{
-      name = "logistics-combinator",
-      limit = 1000
-    }
-    for _, e in pairs(found) do
-      if e.valid and e.unit_number == unit_number then
-        entity = e
-        break
-      end
-    end
-    if entity then break end
-  end
+  -- Get the entity using cache (O(1) after first lookup)
+  local entity = get_combinator_entity(unit_number)
 
   if not entity or not entity.valid then
     combinator_data.connected_entities = {}
@@ -142,12 +209,16 @@ function logistics_combinator.update_connected_entities(unit_number)
   for _, e in pairs(connected.red or {}) do
     if e.valid and logistics_utils.supports_logistics_control(e) then
       entities_set[e.unit_number] = true
+      -- Cache connected entities for later retrieval
+      connected_entity_cache[e.unit_number] = e
     end
   end
 
   for _, e in pairs(connected.green or {}) do
     if e.valid and logistics_utils.supports_logistics_control(e) then
       entities_set[e.unit_number] = true
+      -- Cache connected entities for later retrieval
+      connected_entity_cache[e.unit_number] = e
     end
   end
 
@@ -170,27 +241,15 @@ end
 --- Process all rules for a logistics combinator
 -- Called every 15 ticks for active combinators
 -- Implements edge-triggered behavior: only act on condition state changes
+-- PERFORMANCE: Now uses entity cache, O(1) lookup instead of O(n²) search
 -- @param unit_number number: Combinator unit_number
 function logistics_combinator.process_rules(unit_number)
   if not global.logistics_combinators then return end
   local combinator_data = global.logistics_combinators[unit_number]
   if not combinator_data then return end
 
-  -- Get the combinator entity
-  local entity = nil
-  for _, surface in pairs(game.surfaces) do
-    local found = surface.find_entities_filtered{
-      name = "logistics-combinator",
-      limit = 1000
-    }
-    for _, e in pairs(found) do
-      if e.valid and e.unit_number == unit_number then
-        entity = e
-        break
-      end
-    end
-    if entity then break end
-  end
+  -- Get the combinator entity using cache (O(1) after first lookup)
+  local entity = get_combinator_entity(unit_number)
 
   if not entity or not entity.valid then return end
 
@@ -231,27 +290,17 @@ function logistics_combinator.process_rules(unit_number)
 end
 
 --- Execute a single rule on all connected entities
+-- PERFORMANCE: Now uses entity cache, O(1) lookup per entity instead of O(n²) search
 -- @param rule table: Rule definition
 -- @param connected_entity_ids table: Array of entity unit_numbers
 -- @param combinator_unit_number number: Combinator that owns this rule
 function logistics_combinator.execute_rule(rule, connected_entity_ids, combinator_unit_number)
   if not rule or not rule.group_name or not rule.action then return end
 
-  -- Find all connected entities
+  -- Process all connected entities
   for _, entity_id in ipairs(connected_entity_ids) do
-    local entity = nil
-
-    -- Find entity by unit_number
-    for _, surface in pairs(game.surfaces) do
-      local all_entities = surface.find_entities_filtered{limit = 10000}
-      for _, e in pairs(all_entities) do
-        if e.valid and e.unit_number == entity_id then
-          entity = e
-          break
-        end
-      end
-      if entity then break end
-    end
+    -- Get entity using cache (O(1) after first lookup)
+    local entity = get_entity_by_unit_number(entity_id)
 
     if entity and entity.valid and logistics_utils.supports_logistics_control(entity) then
       if rule.action == "inject" then
@@ -356,5 +405,8 @@ end
 -- ==============================================================================
 -- EXPORT
 -- ==============================================================================
+
+-- Export cache clearing function for on_load
+logistics_combinator.clear_entity_caches = clear_entity_caches
 
 return logistics_combinator

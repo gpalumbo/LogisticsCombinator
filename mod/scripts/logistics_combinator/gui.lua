@@ -508,28 +508,23 @@ function logistics_gui.update_rule_condition(player, element)
 end
 
 --- Refresh GUI with current data
+-- PERFORMANCE: Uses global state to find entity efficiently (O(1) instead of O(n²))
 -- @param player LuaPlayer: Player whose GUI to refresh
 -- @param entity_unit_number number: Entity unit_number
 function logistics_gui.refresh_gui(player, entity_unit_number)
   if not player or not player.valid then return end
 
-  -- Find entity
-  local entity = nil
-  for _, surface in pairs(game.surfaces) do
-    local found = surface.find_entities_filtered{
-      name = "logistics-combinator",
-      limit = 1000
-    }
-    for _, e in pairs(found) do
-      if e.valid and e.unit_number == entity_unit_number then
-        entity = e
-        break
-      end
-    end
-    if entity then break end
-  end
+  -- Get combinator data from global (has surface_index and position)
+  local combinator_data = global.logistics_combinators and global.logistics_combinators[entity_unit_number]
+  if not combinator_data then return end
 
-  if entity and entity.valid then
+  -- Find entity using stored location (O(1) lookup)
+  local surface = game.surfaces[combinator_data.surface_index]
+  if not surface then return end
+
+  local entity = surface.find_entity("logistics-combinator", combinator_data.position)
+
+  if entity and entity.valid and entity.unit_number == entity_unit_number then
     logistics_gui.create_gui(player, entity)
   end
 end

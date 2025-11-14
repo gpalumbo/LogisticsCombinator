@@ -45,8 +45,11 @@ end)
 
 --- Restore runtime state on load
 script.on_load(function()
-  -- No runtime state to restore currently
+  -- Clear entity caches (they are rebuilt on first access)
+  logistics_combinator.clear_entity_caches()
+
   -- This function is for registering metatables and conditional event handlers
+  log("Mission Control mod: Runtime state restored, caches cleared")
 end)
 
 -- ==============================================================================
