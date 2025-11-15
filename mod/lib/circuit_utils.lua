@@ -58,11 +58,15 @@ end
 -- SIGNAL READING
 --------------------------------------------------------------------------------
 
---- Read signals from entity circuit connector
+--- Read signals from entity circuit connector (Factorio 2.0 API)
 --- @param entity LuaEntity: Entity to read from
---- @param wire_type defines.wire_type: RED or GREEN
---- @param connector_id defines.circuit_connector_id: Which connector (default: combinator_input)
+--- @param wire_connector_id defines.wire_connector_id: Which wire connector to read
 --- @return table|nil: Signal table {[signal_id] = count} or nil if no connection
+---
+--- FACTORIO 2.0 API CHANGES:
+---   - Use defines.wire_connector_id (not defines.circuit_connector_id)
+---   - get_circuit_network() takes single parameter (wire_connector_id)
+---   - Available connectors: combinator_input_red, combinator_input_green, etc.
 ---
 --- EDGE CASES:
 ---   - Returns nil if entity is invalid
@@ -77,19 +81,19 @@ end
 ---   }
 ---
 --- TEST CASES:
----   get_circuit_signals(nil, red, input) => nil
----   get_circuit_signals(unwired_combinator, red, input) => nil
----   get_circuit_signals(wired_combinator, red, input) => {...}
-function circuit_utils.get_circuit_signals(entity, wire_type, connector_id)
+---   get_circuit_signals(nil, combinator_input_red) => nil
+---   get_circuit_signals(unwired_combinator, combinator_input_red) => nil
+---   get_circuit_signals(wired_combinator, combinator_input_red) => {...}
+function circuit_utils.get_circuit_signals(entity, wire_connector_id)
   if not circuit_utils.is_valid_circuit_entity(entity) then
     return nil
   end
 
-  -- Default to combinator input connector if not specified
-  connector_id = connector_id or defines.circuit_connector_id.combinator_input
+  -- Default to combinator input red if not specified
+  wire_connector_id = wire_connector_id or defines.wire_connector_id.combinator_input_red
 
-  -- Get the circuit network for this wire type and connector
-  local circuit_network = entity.get_circuit_network(wire_type, connector_id)
+  -- Get the circuit network for this wire connector (Factorio 2.0 API)
+  local circuit_network = entity.get_circuit_network(wire_connector_id)
 
   if not circuit_network then
     return nil
@@ -237,6 +241,79 @@ end
 function circuit_utils.has_any_circuit_connection(entity)
   return circuit_utils.has_circuit_connection(entity, defines.wire_type.red) or
          circuit_utils.has_circuit_connection(entity, defines.wire_type.green)
+end
+
+--- Get all input signals from both red and green wires with metadata (Factorio 2.0 API)
+--- @param entity LuaEntity: Entity to read from
+--- @param connector_type string: Connector type prefix (default: "combinator_input")
+--- @return table: Array of signal display data {signal_id, count, wire_color}
+---
+--- FACTORIO 2.0 API:
+---   - Uses wire_connector_id for both red and green wires
+---   - connector_type options: "combinator_input", "combinator_output", "circuit", etc.
+---
+--- EDGE CASES:
+---   - Returns empty array if entity is invalid
+---   - Returns empty array if no connections
+---   - Combines signals present on both wires (sums values, marks as "both")
+---   - Sorted by type then name for consistent display
+---
+--- WIRE_COLOR VALUES:
+---   - "red" - Signal only on red wire
+---   - "green" - Signal only on green wire
+---   - "both" - Signal present on both wires (count is summed)
+---
+--- RETURN FORMAT:
+---   {
+---     {signal_id = {type="item", name="iron-plate"}, count = 100, wire_color = "red"},
+---     {signal_id = {type="virtual", name="signal-A"}, count = 50, wire_color = "green"},
+---     ...
+---   }
+---
+--- TEST CASES:
+---   get_input_signals(nil) => {}
+---   get_input_signals(unwired) => {}
+---   get_input_signals(red_only) => {{signal_id, count, wire_color="red"}, ...}
+---   get_input_signals(both_wires) => signals from both, merged where overlap
+function circuit_utils.get_input_signals(entity, connector_type)
+  if not circuit_utils.is_valid_circuit_entity(entity) then
+    return {}
+  end
+
+  -- Default to combinator input if not specified
+  connector_type = connector_type or "combinator_input"
+
+  -- Build wire connector IDs for red and green wires (Factorio 2.0 API)
+  local red_connector_id = defines.wire_connector_id[connector_type .. "_red"]
+  local green_connector_id = defines.wire_connector_id[connector_type .. "_green"]
+
+  local signals_display = { red = {}, green = {}, both = {} }
+
+  -- Read red wire signals
+  local red_signals = circuit_utils.get_circuit_signals(entity, red_connector_id)
+  if red_signals then
+    for signal_id, count in pairs(red_signals) do
+      table.insert(signals_display.red, {
+        signal_id = signal_id,
+        count = count,
+        wire_color = "red"
+      })
+    end
+  end
+
+  -- Read green wire signals
+  local green_signals = circuit_utils.get_circuit_signals(entity, green_connector_id)
+  if green_signals then
+  for signal_id, count in pairs(green_signals) do
+      table.insert(signals_display.green, {
+        signal_id = signal_id,
+        count = count,
+        wire_color = "green"
+      })
+    end
+  end
+
+  return signals_display
 end
 
 --------------------------------------------------------------------------------

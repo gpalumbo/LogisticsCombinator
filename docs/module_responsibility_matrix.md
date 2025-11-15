@@ -223,7 +223,7 @@ function evaluate_condition(signals, condition)    -- Rule evaluation → script
 ```
 
 **CRITICAL BOUNDARY:**
-This module performs injections but doesn't track them in global. The entity script calls this module and then updates global state.
+This module performs injections but doesn't track them in storage. The entity script calls this module and then updates global state.
 
 ---
 
@@ -310,7 +310,7 @@ function on_mc_built(entity, player)              -- Event handler → scripts/m
 **CRITICAL PATTERN:**
 ```lua
 -- This module provides:
-global.mc_networks[surface_index] = {...}  -- STRUCTURE
+storage.mc_networks[surface_index] = {...}  -- STRUCTURE
 function get_mc_network(surface_index)     -- ACCESSOR
 
 -- Other modules provide:
@@ -319,129 +319,177 @@ function update_mc_network(surface_index)  -- LOGIC
 
 ---
 
-### scripts/mission_control.lua
+## Entity-Specific Script Modules
+
+**ARCHITECTURAL NOTE:** Entity scripts are organized into subdirectories under `scripts/` for better organization and maintainability. Each entity type has its own subdirectory containing:
+- Core functionality module (entity_name.lua)
+- GUI handling module (gui.lua)
+- Event/control handling module (control.lua)
+
+### scripts/mission_control/ (directory)
+
+#### scripts/mission_control/mission_control.lua
 
 **OWNS:**
-- Mission Control entity lifecycle (build/remove)
 - MC network signal aggregation
 - MC output signal distribution
 - MC-specific validation
 - MC network cleanup
-- All logic specific to the MC building
+- All core logic specific to the MC building
 
 **DOES NOT OWN:**
+- Entity lifecycle events (that's control.lua)
+- GUI creation/handling (that's gui.lua)
 - Platform detection (that's lib/platform_utils)
 - Signal table operations (that's lib/signal_utils)
 - Circuit I/O (that's lib/circuit_utils)
 - Cross-surface transmission coordination (that's scripts/network_manager)
 - Global registration (calls scripts/globals)
 
-**Decision Criteria:**
-- ✅ "Is this about what the MC building does?" → mission_control.lua
-- ✅ "Is this MC-specific business logic?" → mission_control.lua
-- ❌ "Is this about coordinating MC + receivers?" → scripts/network_manager
-- ❌ "Is this a generic circuit operation?" → lib/circuit_utils
+**Examples:**
+```lua
+-- ✅ BELONGS HERE
+function update_mc_network(surface_index)         -- Aggregate MC inputs
+function set_mc_outputs(surface_index, red, green) -- Distribute to all MCs
+function validate_mc_state(unit_number)           -- Validation logic
+
+-- ❌ DOES NOT BELONG
+function on_mc_built(entity, player)              -- Events → control.lua
+function create_mc_gui(player, entity)            -- GUI → gui.lua
+function register_mc_building(entity)             -- Registration → scripts/globals
+```
+
+#### scripts/mission_control/control.lua
+
+**OWNS:**
+- Entity lifecycle event handlers (build/remove)
+- Wire connection event handlers
+- Event registration for MC entities
+- Dispatching to core logic
 
 **Examples:**
 ```lua
 -- ✅ BELONGS HERE
-function on_mc_built(entity, player)
-function on_mc_removed(entity)
-function update_mc_network(surface_index)         -- Aggregate MC inputs
-function set_mc_outputs(surface_index, red, green) -- Distribute to all MCs
-
--- ❌ DOES NOT BELONG
-function get_circuit_signals(entity, wire_type)    -- Generic → lib/circuit_utils
-function is_platform_orbiting(platform_id, ...)    -- Platform → lib/platform_utils
-function update_transmissions()                    -- Coordination → scripts/network_manager
-function register_mc_building(entity)              -- Registration → scripts/globals
+function on_built(entity, player)
+function on_removed(entity)
+function on_wire_added(event)
+function register_events()
 ```
 
-**BOUNDARY WITH network_manager:**
-- mission_control.lua: "What should the MC network output be?" (aggregation)
-- network_manager.lua: "Send MC network to receivers" (transmission)
+#### scripts/mission_control/gui.lua
+
+**OWNS:**
+- MC-specific GUI creation
+- MC GUI event handlers
+- MC GUI state updates
 
 ---
 
-### scripts/receiver_combinator.lua
+### scripts/receiver_combinator/ (directory)
+
+#### scripts/receiver_combinator/receiver_combinator.lua
 
 **OWNS:**
-- Receiver entity lifecycle (build/remove)
 - Receiver connection status checking
 - Receiver-specific orbit detection logic
 - Receiver configuration storage access
 - Receiver status queries
-- All logic specific to receiver combinators
+- All core logic specific to receiver combinators
 
 **DOES NOT OWN:**
+- Entity lifecycle events (that's control.lua)
+- GUI creation/handling (that's gui.lua)
 - Generic platform queries (that's lib/platform_utils)
 - Signal transmission (that's scripts/network_manager)
-- GUI creation (that's scripts/gui_handlers)
 - Global registration (calls scripts/globals)
-
-**Decision Criteria:**
-- ✅ "Is this about what a receiver does?" → receiver_combinator.lua
-- ✅ "Is this receiver-specific business logic?" → receiver_combinator.lua
-- ❌ "Is this a generic platform query?" → lib/platform_utils
-- ❌ "Is this about transmitting signals?" → scripts/network_manager
 
 **Examples:**
 ```lua
 -- ✅ BELONGS HERE
-function on_receiver_built(entity, player)
-function on_receiver_removed(entity)
 function check_receiver_connection(unit_number)   -- Business logic using platform_utils
 function get_receiver_status(unit_number)
+function update_receiver_config(unit_number, surfaces)
 
 -- ❌ DOES NOT BELONG
-function is_platform_orbiting(platform_id, ...)   -- Generic → lib/platform_utils
+function on_receiver_built(entity, player)        -- Events → control.lua
+function create_receiver_gui(player, entity)      -- GUI → gui.lua
 function relay_to_platform(unit_number, signals)  -- Transmission → scripts/network_manager
-function create_receiver_gui(player, entity)      -- GUI → scripts/gui_handlers
-function register_receiver(entity)                 -- Registration → scripts/globals
 ```
 
-**BOUNDARY WITH network_manager:**
-- receiver_combinator.lua: "Is this receiver connected to planet X?" (status)
-- network_manager.lua: "Send these signals through this receiver" (transmission)
+#### scripts/receiver_combinator/control.lua
+
+**OWNS:**
+- Entity lifecycle event handlers
+- Platform movement event handlers
+- Event registration for receiver entities
+
+#### scripts/receiver_combinator/gui.lua
+
+**OWNS:**
+- Surface configuration GUI
+- Receiver GUI event handlers
+- Connection status display
 
 ---
 
-### scripts/logistics_combinator.lua
+### scripts/logistics_combinator/ (directory)
+
+#### scripts/logistics_combinator/logistics_combinator.lua
 
 **OWNS:**
-- Logistics combinator lifecycle (build/remove)
 - Rule processing and evaluation
 - Connected entity cache management
 - Rule state tracking (edge detection)
 - Rule execution coordination
-- All logic specific to logistics combinators
+- All core logic specific to logistics combinators
 
 **DOES NOT OWN:**
+- Entity lifecycle events (that's control.lua)
+- GUI creation/handling (that's gui.lua)
 - Actual logistics injection/removal (calls lib/logistics_utils)
-- GUI creation (that's scripts/gui_handlers)
 - Condition evaluation algorithm (that's lib/gui_utils)
 - Global state storage (calls scripts/globals)
-
-**Decision Criteria:**
-- ✅ "Is this about how logistics combinators work?" → logistics_combinator.lua
-- ✅ "Is this about when/why to inject groups?" → logistics_combinator.lua
-- ❌ "Is this the low-level injection mechanism?" → lib/logistics_utils
-- ❌ "Is this GUI event handling?" → scripts/gui_handlers
 
 **Examples:**
 ```lua
 -- ✅ BELONGS HERE
-function on_logistics_combinator_built(entity, player)
 function process_logistics_rules(unit_number)
 function update_connected_entities(unit_number)
 function rule_state_changed(rule, current_signals)
+function inject_group(combinator_id, entity_id, group_name)
 
 -- ❌ DOES NOT BELONG
+function on_logistics_combinator_built(entity, player) -- Events → control.lua
+function create_logistics_gui(player, entity)      -- GUI → gui.lua
 function inject_logistics_group(entity, template)  -- Low-level → lib/logistics_utils
-function create_logistics_gui(player, entity)      -- GUI → scripts/gui_handlers
 function evaluate_condition(signals, condition)    -- Generic → lib/gui_utils
-function register_logistics_combinator(entity)     -- Registration → scripts/globals
 ```
+
+#### scripts/logistics_combinator/control.lua
+
+**OWNS:**
+- Entity lifecycle event handlers
+- Wire connection event handlers
+- Event registration for logistics combinators
+- Dispatching to core logic
+
+**Examples:**
+```lua
+-- ✅ BELONGS HERE
+function on_built(entity, player)
+function on_removed(entity)
+function on_wire_added(event)
+function on_wire_removed(event)
+function register_events()
+```
+
+#### scripts/logistics_combinator/gui.lua
+
+**OWNS:**
+- Logistics combinator GUI creation
+- Rule configuration interface
+- GUI event handlers
+- Rule display and editing
 
 **CRITICAL PATTERN:**
 ```lua
@@ -503,60 +551,6 @@ This module orchestrates entity scripts. It calls:
 - `mission_control.get_mc_aggregated_signals()`
 - `receiver_combinator.check_receiver_connection()`
 - Then performs transmission between them
-
----
-
-### scripts/gui_handlers.lua
-
-**OWNS:**
-- Entity-specific GUI creation (receiver, logistics)
-- GUI event routing and handling
-- GUI state updates
-- GUI open/close logic
-- Player GUI cleanup
-- All GUI event callbacks
-
-**DOES NOT OWN:**
-- Generic GUI elements (that's lib/gui_utils)
-- GUI state storage (that's scripts/globals)
-- Entity business logic (that's entity scripts)
-- Condition evaluation (that's lib/gui_utils)
-
-**Decision Criteria:**
-- ✅ "Is this creating a specific entity's GUI?" → gui_handlers.lua
-- ✅ "Is this handling a GUI event?" → gui_handlers.lua
-- ❌ "Is this a reusable GUI component?" → lib/gui_utils
-- ❌ "Is this storing GUI state?" → scripts/globals
-- ❌ "Is this non-GUI entity logic?" → entity script
-
-**Examples:**
-```lua
--- ✅ BELONGS HERE
-function create_receiver_gui(player, entity)
-function on_gui_opened(event)
-function on_receiver_surface_changed(event)
-function on_logistics_add_rule(event)
-
--- ❌ DOES NOT BELONG
-function create_titlebar(parent, title)           // Generic → lib/gui_utils
-function evaluate_condition(signals, condition)   -- Generic → lib/gui_utils
-function add_logistics_rule(unit_number, rule)    -- State → scripts/globals
-function process_logistics_rules(unit_number)     -- Logic → scripts/logistics_combinator
-```
-
-**PATTERN:**
-```lua
--- This module handles events:
-function on_logistics_add_rule(event)
-  local rule = build_rule_from_gui(event)
-  -- Delegates to globals for storage:
-  globals.add_logistics_rule(unit_number, rule)
-  -- Delegates to entity script for immediate processing:
-  logistics_combinator.process_logistics_rules(unit_number)
-  -- Updates GUI:
-  update_logistics_gui(player)
-end
-```
 
 ---
 
@@ -764,7 +758,7 @@ end
 ```lua
 -- lib/circuit_utils.lua
 function get_all_mc_signals()
-  for surface_index, network in pairs(global.mc_networks) do  -- NO!
+  for surface_index, network in pairs(storage.mc_networks) do  -- NO!
     -- ...
   end
 end

@@ -157,7 +157,7 @@ end
 
 -- ✅ Fix: Correct spelling
 function on_init()
-    global.data = {}
+    storage.data = {}
 end
 ```
 
@@ -183,7 +183,7 @@ end
 -- In mod/lib/signal_utils.lua
 -- ❌ Error: lib files should not access global directly
 function get_stored_signals()
-    return global.signals  -- Violates pure function principle!
+    return storage.signals  -- Violates pure function principle!
 end
 
 -- ✅ Fix: Pass data as parameter
@@ -192,7 +192,7 @@ function get_stored_signals(signals_data)
 end
 
 -- In calling code (mod/scripts/mission_control.lua)
-local signals = signal_utils.get_stored_signals(global.signals)
+local signals = signal_utils.get_stored_signals(storage.signals)
 ```
 
 ## File-Specific Rules

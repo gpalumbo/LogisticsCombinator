@@ -51,7 +51,7 @@ end
 --
 -- IMPLEMENTATION REQUIRED:
 -- - Track entities when wires are connected (on_wire_added event)
--- - Store in global: global.circuit_entities[network_id] = {entity_unit_numbers}
+-- - Store in global: storage.circuit_entities[network_id] = {entity_unit_numbers}
 -- - Use this function as a helper to filter tracked entities
 --
 -- @param circuit_network LuaCircuitNetwork: Network to scan
@@ -73,7 +73,7 @@ function logistics_utils.find_logistics_entities_on_network(circuit_network)
 
   -- Placeholder: Return empty array
   -- The logistics combinator script must track connected entities via:
-  -- - on_wire_added event: Add entity to global.circuit_entities[network.network_id]
+  -- - on_wire_added event: Add entity to storage.circuit_entities[network.network_id]
   -- - on_wire_removed event: Remove entity from tracking
   -- - Pass tracked entities to this function for filtering
 
@@ -142,7 +142,7 @@ end
 -- if not logistics_utils.has_logistics_group(entity, "fuel-request") then
 --   local section_idx, err = logistics_utils.inject_logistics_group(entity, "fuel-request", combinator.unit_number)
 --   if section_idx then
---     -- Caller must now track: global.injected_groups[entity.unit_number][section_idx] = combinator.unit_number
+--     -- Caller must now track: storage.injected_groups[entity.unit_number][section_idx] = combinator.unit_number
 --   else
 --     game.print("Failed to inject: " .. err)
 --   end
@@ -178,7 +178,7 @@ function logistics_utils.inject_logistics_group(entity, group_name, combinator_i
 
   -- Store combinator ID in section metadata (if API supports it)
   -- Note: Factorio 2.0 logistic sections may not have custom metadata storage
-  -- In that case, caller MUST track this in global.injected_groups
+  -- In that case, caller MUST track this in storage.injected_groups
   -- new_section.metadata = {combinator_id = combinator_id}  -- Not available in API
 
   -- Return the section index (1-based)
@@ -204,11 +204,11 @@ end
 -- @return number: Count of sections removed
 --
 -- USAGE:
--- local tracking = global.injected_groups[entity.unit_number] or {}
+-- local tracking = storage.injected_groups[entity.unit_number] or {}
 -- local removed, count = logistics_utils.remove_logistics_group(entity, "fuel-request", combinator.unit_number, tracking)
 -- if removed then
 --   game.print("Removed " .. count .. " sections")
---   -- Caller must update global.injected_groups
+--   -- Caller must update storage.injected_groups
 -- end
 function logistics_utils.remove_logistics_group(entity, group_name, combinator_id, tracking_data)
   if not logistics_utils.supports_logistics_control(entity) then
@@ -299,10 +299,10 @@ end
 -- USAGE:
 -- local removed_count = logistics_utils.cleanup_combinator_groups(
 --   combinator.unit_number,
---   global.injected_groups
+--   storage.injected_groups
 -- )
 -- game.print("Cleaned up " .. removed_count .. " injected groups")
--- -- Caller must clear tracking data from global.injected_groups
+-- -- Caller must clear tracking data from storage.injected_groups
 function logistics_utils.cleanup_combinator_groups(combinator_id, tracking_data)
   if not combinator_id or not tracking_data then
     return 0
@@ -362,10 +362,10 @@ end
 -- @return number: Count of sections removed
 --
 -- USAGE:
--- local tracking = global.injected_groups[entity.unit_number] or {}
+-- local tracking = storage.injected_groups[entity.unit_number] or {}
 -- local removed_count = logistics_utils.cleanup_entity_groups(entity, tracking)
 -- game.print("Cleaned up " .. removed_count .. " injected groups from entity")
--- -- Caller must clear tracking data: global.injected_groups[entity.unit_number] = nil
+-- -- Caller must clear tracking data: storage.injected_groups[entity.unit_number] = nil
 function logistics_utils.cleanup_entity_groups(entity, tracking_data)     
   if not logistics_utils.supports_logistics_control(entity) then
     return 0
@@ -440,8 +440,8 @@ if not has_group then
   if section_idx then
     game.print("Injected at section " .. section_idx)
     -- IMPORTANT: Caller must track this
-    global.injected_groups[entity.unit_number] = global.injected_groups[entity.unit_number] or {}
-    global.injected_groups[entity.unit_number][section_idx] = combinator_id
+    storage.injected_groups[entity.unit_number] = storage.injected_groups[entity.unit_number] or {}
+    storage.injected_groups[entity.unit_number][section_idx] = combinator_id
   else
     game.print("Failed: " .. err)
   end
@@ -452,7 +452,7 @@ EXAMPLE 3: Removing a group
 ----------------------------
 local entity = ...
 local combinator_id = 12345
-local tracking = global.injected_groups[entity.unit_number] or {}
+local tracking = storage.injected_groups[entity.unit_number] or {}
 
 local removed, count = logistics_utils.remove_logistics_group(
   entity,
@@ -476,13 +476,13 @@ local combinator_id = 12345
 
 local removed_count = logistics_utils.cleanup_combinator_groups(
   combinator_id,
-  global.injected_groups
+  storage.injected_groups
 )
 
 game.print("Removed " .. removed_count .. " groups")
 
 -- IMPORTANT: Caller must clear tracking
-for entity_id, sections in pairs(global.injected_groups) do
+for entity_id, sections in pairs(storage.injected_groups) do
   for section_idx, comb_id in pairs(sections) do
     if comb_id == combinator_id then
       sections[section_idx] = nil
@@ -491,7 +491,7 @@ for entity_id, sections in pairs(global.injected_groups) do
 
   -- Clean up empty entity tracking
   if not next(sections) then
-    global.injected_groups[entity_id] = nil
+    storage.injected_groups[entity_id] = nil
   end
 end
 
@@ -499,14 +499,14 @@ end
 EXAMPLE 5: Cleanup on entity removal
 -------------------------------------
 local entity = ...
-local tracking = global.injected_groups[entity.unit_number] or {}
+local tracking = storage.injected_groups[entity.unit_number] or {}
 
 local removed_count = logistics_utils.cleanup_entity_groups(entity, tracking)
 
 game.print("Cleaned up " .. removed_count .. " groups")
 
 -- IMPORTANT: Caller must clear tracking
-global.injected_groups[entity.unit_number] = nil
+storage.injected_groups[entity.unit_number] = nil
 
 --]]
 

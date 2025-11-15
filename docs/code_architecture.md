@@ -369,7 +369,7 @@ function supports_logistics_control(entity)
 
 **Global Structure:**
 ```lua
-global.injected_groups = {
+storage.injected_groups = {
   [entity_unit_number] = {
     [section_index] = combinator_unit_number
   }
@@ -464,11 +464,11 @@ local GUI_CONSTANTS = {
 ```lua
 -- Initialize all global tables
 function init_globals()
-  global.mc_networks = global.mc_networks or {}
-  global.platform_receivers = global.platform_receivers or {}
-  global.logistics_combinators = global.logistics_combinators or {}
-  global.injected_groups = global.injected_groups or {}
-  global.gui_state = global.gui_state or {}
+  storage.mc_networks = storage.mc_networks or {}
+  storage.platform_receivers = storage.platform_receivers or {}
+  storage.logistics_combinators = storage.logistics_combinators or {}
+  storage.injected_groups = storage.injected_groups or {}
+  storage.gui_state = storage.gui_state or {}
 end
 
 -- Get or create MC network for surface

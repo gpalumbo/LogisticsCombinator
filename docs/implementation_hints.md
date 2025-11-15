@@ -295,11 +295,11 @@ The Mission Control mod extends Factorio 2.0+ space platform automation by enabl
 
 -- Global state structure
 function init_globals()
-  global.mc_networks = global.mc_networks or {}  -- [surface_index] = {red_signals, green_signals}
-  global.platform_receivers = global.platform_receivers or {}  -- [platform.unit_number] = {entity, surfaces}
-  global.logistics_combinators = global.logistics_combinators or {}  -- [unit_number] = {entity, rules, connected}
-  global.injected_groups = global.injected_groups or {}  -- Track which groups we injected
-  global.signal_queue = global.signal_queue or {}  -- For transmission delay
+  storage.mc_networks = storage.mc_networks or {}  -- [surface_index] = {red_signals, green_signals}
+  storage.platform_receivers = storage.platform_receivers or {}  -- [platform.unit_number] = {entity, surfaces}
+  storage.logistics_combinators = storage.logistics_combinators or {}  -- [unit_number] = {entity, rules, connected}
+  storage.injected_groups = storage.injected_groups or {}  -- Track which groups we injected
+  storage.signal_queue = storage.signal_queue or {}  -- For transmission delay
 end
 
 -- Event Registration
@@ -337,7 +337,7 @@ function on_entity_built(event)
   local entity = event.created_entity or event.entity
   
   if entity.name == "mission-control-building" then
-    -- Register MC in global.mc_networks[entity.surface.index]
+    -- Register MC in storage.mc_networks[entity.surface.index]
     -- Initialize circuit monitoring
   elseif entity.name == "receiver-combinator" then
     -- Only allow on space platforms
@@ -345,17 +345,17 @@ function on_entity_built(event)
       -- Refund and cancel
       return
     end
-    -- Register in global.platform_receivers
+    -- Register in storage.platform_receivers
     -- Open configuration GUI
   elseif entity.name == "logistics-combinator" then
-    -- Register in global.logistics_combinators
+    -- Register in storage.logistics_combinators
     -- Initialize rule storage
   end
 end
 
 function update_transmissions()
   -- Process MC networks
-  for surface_index, network in pairs(global.mc_networks) do
+  for surface_index, network in pairs(storage.mc_networks) do
     local red_sum, green_sum = {}, {}
     
     -- Sum all MC inputs on surface
@@ -365,7 +365,7 @@ function update_transmissions()
     end
     
     -- Send to all orbiting platforms
-    for platform_id, receiver_data in pairs(global.platform_receivers) do
+    for platform_id, receiver_data in pairs(storage.platform_receivers) do
       if is_platform_orbiting(platform_id, surface_index) then
         output_signals(receiver_data.entity, red_sum, green_sum)
       end
@@ -373,7 +373,7 @@ function update_transmissions()
   end
   
   -- Process logistics combinators
-  for unit_number, combinator_data in pairs(global.logistics_combinators) do
+  for unit_number, combinator_data in pairs(storage.logistics_combinators) do
     process_logistics_rules(combinator_data)
   end
 end
@@ -485,8 +485,8 @@ function inject_logistics_group(entity, group_name)
   entity.logistic_sections.add_section(group_data)
   
   -- Track injection for cleanup
-  global.injected_groups[entity.unit_number] = global.injected_groups[entity.unit_number] or {}
-  table.insert(global.injected_groups[entity.unit_number], group_name)
+  storage.injected_groups[entity.unit_number] = storage.injected_groups[entity.unit_number] or {}
+  table.insert(storage.injected_groups[entity.unit_number], group_name)
 end
 ```
 

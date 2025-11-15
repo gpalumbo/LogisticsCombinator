@@ -12,8 +12,8 @@ LUACHECK := $(shell which luacheck 2>/dev/null)
 LUACHECK_CONFIG := .luacheckrc
 
 # Extract mod name and version from info.json
-MOD_NAME := $(shell grep -Po '"name":\s*"\K[^"]+' $(INFO_FILE))
-MOD_VERSION := $(shell grep -Po '"version":\s*"\K[^"]+' $(INFO_FILE))
+MOD_NAME := $(shell jq -r .name $(INFO_FILE))
+MOD_VERSION := $(shell jq -r .version $(INFO_FILE))
 MOD_FULL_NAME := $(MOD_NAME)_$(MOD_VERSION)
 
 # Platform detection for Factorio mod directory

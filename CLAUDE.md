@@ -5,6 +5,13 @@ Maintain currect activity in @docs/todo.md
 Code snippets defined when considering feasibilty options are in @docs/implmentation_hints.md, When planning you need to look at these and take them into consideration.
 
 **🚨 CRITICAL: Module Responsibility Matrix 🚨**
+Ensure proper API usage is strictly adhered to.  
+- use @docs\flib_api_reference.md to find premade utilities
+- Use Context7 to view "Factorio Lua API"  also use 
+- Use https://github.com/wube/factorio-data/blob/master/core/prototypes/utility-sprites.lua
+VERY IMPORATANT: ALWAYS MAKE SURE YOU ARE USING 2.0 APIs.  I wastes time and gets everyone upset when you use older apis!
+
+**🚨 CRITICAL: Module Responsibility Matrix 🚨**
 Before writing ANY code, consult @docs/module_responsibility_matrix.md
 This defines EXACTLY where each function belongs (lib/ vs scripts/, which module).
 Use the decision tree to determine correct placement for new functions.
@@ -13,20 +20,55 @@ Use the decision tree to determine correct placement for new functions.
 ```
 docs/
 ├── spec.md
+├── todo.md
+├── module_responsibility_matrix.md
+├── implementation_hints.md
 mod/
 ├── info.json
 ├── changelog.txt
 ├── thumbnail.png (optional, 144x144)
 ├── data.lua
 ├── control.lua
+├── lib/                    # Stateless utility libraries
+│   ├── signal_utils.lua
+│   ├── circuit_utils.lua
+│   ├── platform_utils.lua
+│   ├── logistics_utils.lua
+│   ├── gui_utils.lua
+│   └── validation.lua (deprecated - use tile_buildability_rules)
+├── scripts/               # Stateful entity logic
+│   ├── globals.lua       # Global state management
+│   ├── network_manager.lua  # Cross-surface coordination
+│   ├── logistics_combinator/
+│   │   ├── logistics_combinator.lua  # Core functionality
+│   │   ├── gui.lua                   # GUI handling
+│   │   └── control.lua               # Event handling
+│   ├── mission_control/
+│   │   ├── mission_control.lua      # Core functionality
+│   │   ├── gui.lua                  # GUI handling
+│   │   └── control.lua              # Event handling
+│   └── receiver_combinator/
+│       ├── receiver_combinator.lua  # Core functionality
+│       ├── gui.lua                  # GUI handling
+│       └── control.lua              # Event handling
 ├── locale/
 │   └── en/
 │       └── mission-control.cfg
 ├── prototypes/
-│   ├── technology.lua
-│   ├── entity.lua
-│   ├── item.lua
-│   └── recipe.lua
+│   ├── technology/
+│   │   └── technologies.lua  # All technology definitions
+│   ├── entity/
+│   │   ├── logistics_combinator.lua
+│   │   ├── mission_control.lua
+│   │   └── receiver_combinator.lua
+│   ├── item/
+│   │   ├── logistics_combinator.lua
+│   │   ├── mission_control.lua
+│   │   └── receiver_combinator.lua
+│   └── recipe/
+│       ├── logistics_combinator.lua
+│       ├── mission_control.lua
+│       └── receiver_combinator.lua
 └── graphics/
 │   ├── entity/
 │   │   ├── mission-control/

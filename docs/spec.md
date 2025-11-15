@@ -49,7 +49,7 @@ The Mission Control mod extends Factorio 2.0+ space platform automation by enabl
 -- Update on_nth_tick(15) for transmission delay. If more preformant to hook into existing circuit update infrastructure ignore this requirement, however be very careful about performance crossing circuit data across surfaces which is not normally the case.
 
 -- Example global structure:
-global.mc_networks[surface.index] = {
+storage.mc_networks[surface.index] = {
   red_signals = {},
   green_signals = {},
   connected_mcs = {}, -- unit_numbers
@@ -169,7 +169,7 @@ for each rule in combinator_rules do
           if not has_group(entity, rule.group) then
             local section = entity.logistic_sections.add_section(rule.group_template)
             -- Tag with combinator ID for cleanup
-            global.injected_groups[entity.unit_number][rule.group_id] = section.index
+            storage.injected_groups[entity.unit_number][rule.group_id] = section.index
           end
         elseif rule.action == "remove" and condition_met then
           remove_group_if_present(entity, rule.group)
@@ -275,7 +275,7 @@ global = {
 
 | Edge Case | Solution |
 |-----------|----------|
-| Platform destroyed mid-transmission | Clear from global.platform_receivers immediately |
+| Platform destroyed mid-transmission | Clear from storage.platform_receivers immediately |
 | MC destroyed while sending | Recalculate surface network, exclude destroyed MC |
 | Multiple platforms same signal | Sum at MC (intended behavior) |
 | Config change during flight | Apply when platform arrives at next planet |
