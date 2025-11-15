@@ -10,7 +10,7 @@ data:extend({
     priority = "extra-high-no-scale",
     width = 1,
     height = 1,
-    scale = 40,  -- Scale to button size
+    scale = 30,  -- Scale to button size
     tint = {r = 1.0, g = 0.2, b = 0.2, a = 0.7}  -- Semi-transparent red
   },
 
@@ -22,7 +22,7 @@ data:extend({
     priority = "extra-high-no-scale",
     width = 1,
     height = 1,
-    scale = 40,
+    scale = 30 ,
     tint = {r = 0.2, g = 1.0, b = 0.2, a = 0.7}  -- Semi-transparent green
   },
 
@@ -34,7 +34,7 @@ data:extend({
     priority = "extra-high-no-scale",
     width = 1,
     height = 1,
-    scale = 40,
+    scale = 30,
     tint = {r = 1.0, g = 1.0, b = 0.3, a = 0.7}  -- Semi-transparent yellow
   }
 })

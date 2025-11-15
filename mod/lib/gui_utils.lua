@@ -240,6 +240,98 @@ function get_index_from_operator(operator)
 end
 
 -- ==============================================================================
+-- WIRE FILTER COMPONENTS
+-- ==============================================================================
+
+--- Create wire filter checkboxes (R/G)
+-- Creates a pair of checkboxes for filtering red and green wire signals
+-- @param parent LuaGuiElement: Parent container
+-- @param name_prefix string: Prefix for checkbox names (e.g., "left_", "right_")
+-- @return table: {red_checkbox, green_checkbox, flow}
+function create_wire_filter_checkboxes(parent, name_prefix)
+  local filter_flow = parent.add{
+    type = "flow",
+    direction = "horizontal"
+  }
+  filter_flow.style.horizontal_spacing = 2
+  filter_flow.style.vertical_align = "center"
+
+  -- Red checkbox
+  local red_checkbox = filter_flow.add{
+    type = "checkbox",
+    name = name_prefix .. "red",
+    state = true,  -- Default: both enabled
+    tooltip = {"gui.wire-filter-red-tooltip"}
+  }
+  red_checkbox.style.width = 20
+  red_checkbox.style.height = 20
+
+  -- Red label
+  filter_flow.add{
+    type = "label",
+    caption = "[color=red]R[/color]",
+    tooltip = {"gui.wire-filter-red-tooltip"}
+  }
+
+  -- Green checkbox
+  local green_checkbox = filter_flow.add{
+    type = "checkbox",
+    name = name_prefix .. "green",
+    state = true,  -- Default: both enabled
+    tooltip = {"gui.wire-filter-green-tooltip"}
+  }
+  green_checkbox.style.width = 20
+  green_checkbox.style.height = 20
+
+  -- Green label
+  filter_flow.add{
+    type = "label",
+    caption = "[color=green]G[/color]",
+    tooltip = {"gui.wire-filter-green-tooltip"}
+  }
+
+  return {
+    red_checkbox = red_checkbox,
+    green_checkbox = green_checkbox,
+    flow = filter_flow
+  }
+end
+
+--- Get wire filter from checkbox states
+-- Converts checkbox states to wire filter string
+-- @param red_enabled boolean: Red checkbox state
+-- @param green_enabled boolean: Green checkbox state
+-- @return string: "red", "green", "both", or "none"
+function get_wire_filter_from_checkboxes(red_enabled, green_enabled)
+  if red_enabled and green_enabled then
+    return "both"
+  elseif red_enabled then
+    return "red"
+  elseif green_enabled then
+    return "green"
+  else
+    return "none"  -- Invalid state, but handle it
+  end
+end
+
+--- Set checkbox states from wire filter
+-- Converts wire filter string to checkbox states
+-- @param wire_filter string: "red", "green", or "both"
+-- @return table: {red = boolean, green = boolean}
+function get_checkboxes_from_wire_filter(wire_filter)
+  if wire_filter == "both" then
+    return {red = true, green = true}
+  elseif wire_filter == "red" then
+    return {red = true, green = false}
+  elseif wire_filter == "green" then
+    return {red = false, green = true}
+  else
+    -- Default to both if unknown
+    return {red = true, green = true}
+  end
+end
+
+-- ==============================================================================
 -- CONDITION EVALUATION
 -- ==============================================================================
 
@@ -303,6 +395,129 @@ function evaluate_condition(signals, condition)
   end
 end
 
+--- Evaluate complex conditions with boolean operators
+-- Evaluates an array of conditions with per-condition AND/OR operators
+-- @param conditions table: Array of condition objects with logical_op field
+-- @param red_signals table: Signals from red wire {[signal_id] = count}
+-- @param green_signals table: Signals from green wire {[signal_id] = count}
+-- @return boolean: True if overall condition expression is true
+--
+-- Condition format:
+--   {
+--     {
+--       logical_op = "AND"|"OR",  -- How to combine with PREVIOUS result
+--       left_signal = {type="item", name="iron-plate"},
+--       left_wire_filter = "red"|"green"|"both",
+--       operator = "<"|">"|"="|"≠"|"≤"|"≥",
+--       right_type = "constant"|"signal",
+--       right_value = 100,  -- If constant
+--       right_signal = {...},  -- If signal
+--       right_wire_filter = "red"|"green"|"both"
+--     },
+--     -- ... more conditions
+--   }
+--
+-- Examples:
+--   evaluate_complex_conditions({{...}}, red, green) => true/false
+--   Empty conditions array => false (no conditions to evaluate)
+--   First condition's logical_op is ignored (no previous result)
+function evaluate_complex_conditions(conditions, red_signals, green_signals)
+  if not conditions or #conditions == 0 then
+    return false  -- No conditions = false
+  end
+
+  local result = nil  -- Start with no result
+
+  for i, cond in ipairs(conditions) do
+    -- Get signals for left side based on wire filter
+    local left_signals = get_filtered_signals_from_tables(red_signals, green_signals, cond.left_wire_filter)
+
+    -- Get left signal value
+    local left_key = get_signal_key(cond.left_signal)
+    local left_value = left_signals[left_key] or 0
+
+    -- Get right signal value
+    local right_value
+    if cond.right_type == "signal" then
+      local right_signals = get_filtered_signals_from_tables(red_signals, green_signals, cond.right_wire_filter)
+      local right_key = get_signal_key(cond.right_signal)
+      right_value = right_signals[right_key] or 0
+    else
+      right_value = cond.right_value or 0
+    end
+
+    -- Evaluate this condition
+    local cond_result = compare_values(left_value, right_value, cond.operator)
+
+    -- Combine with previous result using logical operator
+    if result == nil then
+      -- First condition, no previous result
+      result = cond_result
+    elseif cond.logical_op == "AND" then
+      result = result and cond_result
+    elseif cond.logical_op == "OR" then
+      result = result or cond_result
+    else
+      -- Unknown operator, treat as AND
+      result = result and cond_result
+    end
+  end
+
+  return result or false
+end
+
+--- Get filtered signals from separate red/green tables
+-- Helper for complex condition evaluation
+-- @param red_signals table: Signals from red wire
+-- @param green_signals table: Signals from green wire
+-- @param wire_filter string: "red", "green", or "both"
+-- @return table: Filtered signal table
+function get_filtered_signals_from_tables(red_signals, green_signals, wire_filter)
+  local result = {}
+
+  if wire_filter == "red" or wire_filter == "both" then
+    if red_signals then
+      for signal_id, count in pairs(red_signals) do
+        result[signal_id] = (result[signal_id] or 0) + count
+      end
+    end
+  end
+
+  if wire_filter == "green" or wire_filter == "both" then
+    if green_signals then
+      for signal_id, count in pairs(green_signals) do
+        result[signal_id] = (result[signal_id] or 0) + count
+      end
+    end
+  end
+
+  return result
+end
+
+--- Compare two values with an operator
+-- Helper function for condition evaluation
+-- @param left number: Left-hand value
+-- @param right number: Right-hand value
+-- @param operator string: Comparison operator
+-- @return boolean: Result of comparison
+function compare_values(left, right, operator)
+  if operator == "<" then
+    return left < right
+  elseif operator == ">" then
+    return left > right
+  elseif operator == "=" then
+    return left == right
+  elseif operator == "≠" then
+    return left ~= right
+  elseif operator == "≤" then
+    return left <= right
+  elseif operator == "≥" then
+    return left >= right
+  else
+    return false  -- Unknown operator
+  end
+end
+
 --- Get signal key for table lookup
 -- Internal helper to convert signal definition to string key
 -- @param signal table: {type = "item"|"fluid"|"virtual", name = "signal-name"}
@@ -312,6 +527,59 @@ function get_signal_key(signal)
   -- For simplicity, use name as key. In real implementation, may need type prefix
   -- to distinguish between item/fluid/virtual signals with same name
   return signal.type .. ":" .. signal.name
+end
+
+--- Create condition result indicator
+-- Creates a status indicator showing true/false for condition evaluation
+-- @param parent LuaGuiElement: Parent container
+-- @param name string: Name for the indicator element
+-- @return table: {flow, sprite, label}
+function create_condition_indicator(parent, name)
+  local indicator_flow = parent.add{
+    type = "flow",
+    name = name .. "_flow",
+    direction = "horizontal"
+  }
+  indicator_flow.style.horizontal_spacing = 4
+  indicator_flow.style.vertical_align = "center"
+
+  indicator_flow.add{
+    type = "label",
+    caption = "Condition: "
+  }
+
+  local sprite = indicator_flow.add{
+    type = "sprite",
+    name = name .. "_sprite",
+    sprite = "utility/status_not_working"  -- Default: false (red X)
+  }
+
+  local label = indicator_flow.add{
+    type = "label",
+    name = name .. "_label",
+    caption = "False"
+  }
+
+  return {
+    flow = indicator_flow,
+    sprite = sprite,
+    label = label
+  }
+end
+
+--- Update condition indicator state
+-- Updates the visual state of a condition indicator
+-- @param sprite LuaGuiElement: Sprite element
+-- @param label LuaGuiElement: Label element
+-- @param state boolean: True/false state to display
+function update_condition_indicator(sprite, label, state)
+  if sprite and sprite.valid then
+    sprite.sprite = state and "utility/status_working" or "utility/status_not_working"
+  end
+
+  if label and label.valid then
+    label.caption = state and "[color=green]True[/color]" or "[color=red]False[/color]"
+  end
 end
 
 -- ==============================================================================
@@ -327,9 +595,16 @@ return {
   create_button_row = create_button_row,
   create_status_label = create_status_label,
   create_condition_selector = create_condition_selector,
+  create_wire_filter_checkboxes = create_wire_filter_checkboxes,
+  create_condition_indicator = create_condition_indicator,
 
   -- Utility functions
   close_gui_for_player = close_gui_for_player,
+  update_condition_indicator = update_condition_indicator,
+
+  -- Wire filter utilities
+  get_wire_filter_from_checkboxes = get_wire_filter_from_checkboxes,
+  get_checkboxes_from_wire_filter = get_checkboxes_from_wire_filter,
 
   -- Operator utilities
   populate_operator_dropdown = populate_operator_dropdown,
@@ -338,5 +613,8 @@ return {
 
   -- Condition evaluation
   evaluate_condition = evaluate_condition,
-  get_signal_key = get_signal_key
+  evaluate_complex_conditions = evaluate_complex_conditions,
+  get_signal_key = get_signal_key,
+  compare_values = compare_values,
+  get_filtered_signals_from_tables = get_filtered_signals_from_tables
 }

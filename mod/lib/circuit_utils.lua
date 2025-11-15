@@ -316,6 +316,75 @@ function circuit_utils.get_input_signals(entity, connector_type)
   return signals_display
 end
 
+--- Get filtered signals based on wire color (Factorio 2.0 API)
+--- Used by complex condition system to read signals from specific wires
+--- @param entity LuaEntity: Entity to read from
+--- @param wire_filter string: "red", "green", or "both"
+--- @param connector_type string: Connector type prefix (default: "combinator_input")
+--- @return table: Signal lookup table {[signal_id] = count}
+---
+--- FACTORIO 2.0 API:
+---   - Uses wire_connector_id for accessing specific wires
+---   - Signal values are summed when wire_filter is "both"
+---
+--- WIRE_FILTER VALUES:
+---   - "red" - Only signals from red wire
+---   - "green" - Only signals from green wire
+---   - "both" - Signals from both wires (values summed)
+---
+--- EDGE CASES:
+---   - Returns empty table if entity is invalid
+---   - Returns empty table if wire not connected
+---   - When "both", signals present on only one wire return that wire's value
+---   - When "both", signals present on both wires have values summed
+---
+--- RETURN FORMAT:
+---   {
+---     [{type="item", name="iron-plate"}] = 100,
+---     [{type="virtual", name="signal-A"}] = 50
+---   }
+---
+--- TEST CASES:
+---   get_filtered_signals(nil, "red") => {}
+---   get_filtered_signals(entity, "red") => {signals from red wire only}
+---   get_filtered_signals(entity, "both") => {signals from both, summed}
+function circuit_utils.get_filtered_signals(entity, wire_filter, connector_type)
+  if not circuit_utils.is_valid_circuit_entity(entity) then
+    return {}
+  end
+
+  -- Default to combinator input if not specified
+  connector_type = connector_type or "combinator_input"
+  wire_filter = wire_filter or "both"
+
+  -- Build wire connector IDs (Factorio 2.0 API)
+  local red_connector_id = defines.wire_connector_id[connector_type .. "_red"]
+  local green_connector_id = defines.wire_connector_id[connector_type .. "_green"]
+
+  local result = {}
+
+  -- Read signals based on filter
+  if wire_filter == "red" or wire_filter == "both" then
+    local red_signals = circuit_utils.get_circuit_signals(entity, red_connector_id)
+    if red_signals then
+      for signal_id, count in pairs(red_signals) do
+        result[signal_id] = (result[signal_id] or 0) + count
+      end
+    end
+  end
+
+  if wire_filter == "green" or wire_filter == "both" then
+    local green_signals = circuit_utils.get_circuit_signals(entity, green_connector_id)
+    if green_signals then
+      for signal_id, count in pairs(green_signals) do
+        result[signal_id] = (result[signal_id] or 0) + count
+      end
+    end
+  end
+
+  return result
+end
+
 --------------------------------------------------------------------------------
 -- EXPORT MODULE
 --------------------------------------------------------------------------------

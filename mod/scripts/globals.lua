@@ -37,7 +37,20 @@ function globals_module.init_globals()
     Structure:
     [combinator_unit_number] = {
         entity = entity_reference,  -- Note: Store unit_number only in production
-        rules = {}, -- condition/action pairs
+        conditions = {  -- Array of complex conditions
+            {
+                logical_op = "AND"|"OR",  -- Combines with PREVIOUS condition
+                left_signal = {type="item", name="iron-plate"},
+                left_wire_filter = "red"|"green"|"both",
+                operator = "<"|">"|"="|"≠"|"≤"|"≥",
+                right_type = "constant"|"signal",
+                right_value = 100,  -- If constant
+                right_signal = {...},  -- If signal
+                right_wire_filter = "red"|"green"|"both"
+            }
+        },
+        condition_result = false,  -- Last evaluated boolean result
+        rules = {}, -- condition/action pairs (legacy/actions - not implemented yet)
         connected_entities = {}, -- cached unit_numbers
         injected_groups = {} -- track what we added
     }
@@ -66,6 +79,8 @@ function globals_module.register_logistics_combinator(entity)
 
     storage.logistics_combinators[entity.unit_number] = {
         entity = entity,  -- TODO: In production, store unit_number only
+        conditions = {},  -- Complex condition array
+        condition_result = false,  -- Last evaluated result
         rules = {},
         connected_entities = {},
         injected_groups = {}
@@ -194,6 +209,98 @@ function globals_module.get_player_gui_state(player_index)
     end
 
     return storage.player_gui_states[player_index]
+end
+
+--- Add a condition to a logistics combinator
+--- @param unit_number number The combinator's unit number
+--- @param condition table The condition to add
+function globals_module.add_logistics_condition(unit_number, condition)
+    if not storage.logistics_combinators then
+        return
+    end
+
+    local data = storage.logistics_combinators[unit_number]
+    if data then
+        if not data.conditions then
+            data.conditions = {}
+        end
+        table.insert(data.conditions, condition)
+    end
+end
+
+--- Remove a condition from a logistics combinator
+--- @param unit_number number The combinator's unit number
+--- @param condition_index number Index of the condition to remove
+function globals_module.remove_logistics_condition(unit_number, condition_index)
+    if not storage.logistics_combinators then
+        return
+    end
+
+    local data = storage.logistics_combinators[unit_number]
+    if data and data.conditions and data.conditions[condition_index] then
+        table.remove(data.conditions, condition_index)
+    end
+end
+
+--- Update a condition in a logistics combinator
+--- @param unit_number number The combinator's unit number
+--- @param condition_index number Index of the condition to update
+--- @param condition table The new condition data
+function globals_module.update_logistics_condition(unit_number, condition_index, condition)
+    if not storage.logistics_combinators then
+        return
+    end
+
+    local data = storage.logistics_combinators[unit_number]
+    if data and data.conditions then
+        data.conditions[condition_index] = condition
+    end
+end
+
+--- Get all conditions for a logistics combinator
+--- @param unit_number number The combinator's unit number
+--- @return table Array of conditions
+function globals_module.get_logistics_conditions(unit_number)
+    if not storage.logistics_combinators then
+        return {}
+    end
+
+    local data = storage.logistics_combinators[unit_number]
+    if data and data.conditions then
+        return data.conditions
+    end
+
+    return {}
+end
+
+--- Set the condition evaluation result
+--- @param unit_number number The combinator's unit number
+--- @param result boolean The evaluation result
+function globals_module.set_condition_result(unit_number, result)
+    if not storage.logistics_combinators then
+        return
+    end
+
+    local data = storage.logistics_combinators[unit_number]
+    if data then
+        data.condition_result = result
+    end
+end
+
+--- Get the condition evaluation result
+--- @param unit_number number The combinator's unit number
+--- @return boolean The last evaluation result
+function globals_module.get_condition_result(unit_number)
+    if not storage.logistics_combinators then
+        return false
+    end
+
+    local data = storage.logistics_combinators[unit_number]
+    if data then
+        return data.condition_result or false
+    end
+
+    return false
 end
 
 -- TODO: Add Mission Control network functions
