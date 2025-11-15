@@ -49,9 +49,9 @@ function create_titlebar(parent, title, close_button_name)
     type = "flow",
     direction = "horizontal"
   }
-  titlebar.style.height = GUI_CONSTANTS.TITLEBAR_HEIGHT
-  titlebar.style.horizontally_stretchable = true
-  titlebar.style.vertical_align = "center"
+  -- titlebar.style.height = GUI_CONSTANTS.TITLEBAR_HEIGHT
+  -- titlebar.style.horizontally_stretchable = true
+  -- titlebar.style.vertical_align = "center"
 
   -- Title label (takes up most space)
   local title_label = titlebar.add{
@@ -59,13 +59,17 @@ function create_titlebar(parent, title, close_button_name)
     caption = title,
     style = "frame_title"
   }
-  title_label.style.horizontally_stretchable = true
+  title_label.style.horizontally_stretchable = false
 
   -- Drag handle (empty filler for window dragging)
-  titlebar.add{
+  local drag_handle = titlebar.add{
     type = "empty-widget",
-    style = "draggable_space_header"
-  }.style.horizontally_stretchable = true
+    style = "draggable_space_header",
+    drag_target = parent,
+    height = 24,
+    direction = "horizontal"
+  }
+  drag_handle.style.horizontally_stretchable = true
 
   -- Close button (Factorio 2.0: "utility/close" not "utility/close_white")
   titlebar.add{
@@ -76,7 +80,7 @@ function create_titlebar(parent, title, close_button_name)
     tooltip = {"gui.close"}
   }
 
-  return titlebar
+  return titlebar, drag_handle
 end
 
 --- Create row of buttons
@@ -312,7 +316,8 @@ function get_signal_key(signal)
   if not signal.name then return "" end
 
   -- Use both type and name for unique key (handles item vs fluid with same name)
-  local sig_type = signal.type or "unknown"
+  -- FACTORIO 2.0 API: type is nil for items when reading
+  local sig_type = signal.type or "item"
   return sig_type .. ":" .. signal.name
 end
 

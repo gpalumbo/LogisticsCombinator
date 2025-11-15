@@ -42,12 +42,16 @@ local signal_utils = {}
   HELPER: Convert signal_id to string key for comparison
   Signal IDs are tables, so we need string keys for equality checks
 
+  FACTORIO 2.0 API: SignalID.type is nil for items when reading.
+  Default to "item" if type is not present.
+
   @param signal_id table: Signal identifier {type, name}
   @return string: Unique string key for this signal
 --]]
 local function signal_to_key(signal_id)
   if not signal_id then return nil end
-  return signal_id.type .. ":" .. signal_id.name
+  local sig_type = signal_id.type or "item"
+  return sig_type .. ":" .. signal_id.name
 end
 
 --[[

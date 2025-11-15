@@ -21,6 +21,8 @@ local logistics_gui = {}
 local mc_globals = require("scripts.mc_globals")
 local gui_utils = require("lib.gui_utils")
 local logistics_combinator = require("scripts.logistics_combinator.init")
+local circuit_utils = require("lib.circuit_utils")
+local signal_utils = require("lib.signal_utils")
 
 -- ==============================================================================
 -- GUI ELEMENT NAMES (for event routing)
@@ -66,12 +68,15 @@ function logistics_gui.create_gui(player, entity)
     tags = {entity_unit_number = entity.unit_number}  -- Store entity reference in tags
   }
 
-  -- Create titlebar
-  gui_utils.create_titlebar(
+  -- Create titlebar with drag handle
+  local titlebar, drag_handle = gui_utils.create_titlebar(
     main_frame,
     {"entity-name.logistics-combinator"},
     GUI_NAMES.LOGISTICS_CLOSE
   )
+
+  -- -- Set drag target to enable window dragging
+  -- main_frame.drag_target = main_frame
 
   -- Main content flow
   local content_flow = main_frame.add{
@@ -127,18 +132,23 @@ function logistics_gui.create_gui(player, entity)
     tooltip = {"logistics-combinator.add-rule-tooltip"}
   }
 
-  -- Connected entities count (bottom, spanning both columns)
+  -- Footer section: Connected entities and input signals
   local footer_flow = main_frame.add{
     type = "flow",
     direction = "vertical"
   }
   footer_flow.style.padding = gui_utils.GUI_CONSTANTS.PADDING
+  footer_flow.style.vertical_spacing = gui_utils.GUI_CONSTANTS.SPACING
 
+  -- Connected entities count
   local connected_count = #(combinator_data.connected_entities or {})
   footer_flow.add{
     type = "label",
     caption = {"logistics-combinator.connected-entities", connected_count}
   }
+
+  -- Input signals section
+  logistics_gui.create_input_signals_section(footer_flow, entity)
 
   -- Center GUI on screen
   main_frame.force_auto_center()
@@ -203,27 +213,11 @@ function logistics_gui.add_rule_row(parent, rule_index, rule)
     group_dropdown.selected_index = 1  -- Default to "(None)"
   end
 
-  -- Spacer
+  -- Spacer (fills remaining space on right)
   top_row.add{
     type = "empty-widget",
     style = "draggable_space"
   }.style.horizontally_stretchable = true
-
-  -- Action label
-  top_row.add{
-    type = "label",
-    caption = {"logistics-combinator.action-label"}
-  }
-
-  -- Action dropdown (inject/remove)
-  local action_dropdown = top_row.add{
-    type = "drop-down",
-    name = GUI_NAMES.LOGISTICS_RULE_PREFIX .. rule_index .. "_action",
-    items = {{"logistics-combinator.inject"}, {"logistics-combinator.remove"}},
-    selected_index = (rule and rule.action == "remove") and 2 or 1,
-    tooltip = {"logistics-combinator.action-tooltip"}
-  }
-  action_dropdown.style.width = 100
 
   -- Bottom row: Condition
   local bottom_row = rule_container.add{
@@ -309,6 +303,131 @@ function logistics_gui.add_rule_row(parent, rule_index, rule)
   }
 end
 
+
+--- Create input signals display section
+-- Shows current circuit network input signals (red and green separately)
+-- @param parent LuaGuiElement: Parent flow to add section to
+-- @param entity LuaEntity: Logistics combinator entity
+function logistics_gui.create_input_signals_section(parent, entity)
+  if not parent or not entity or not entity.valid then return end
+
+  -- Section header
+  local header = parent.add{
+    type = "label",
+    caption = {"logistics-combinator.input-signals"},
+    style = "bold_label"
+  }
+  header.style.top_margin = 4
+
+  -- Container frame for both red and green signals
+  local signals_container = parent.add{
+    type = "frame",
+    direction = "vertical",
+    style = "inside_shallow_frame"
+  }
+  signals_container.style.padding = 8
+  signals_container.style.minimal_width = 600
+
+  -- Read input signals from red and green networks
+  local red_signals = circuit_utils.get_circuit_signals(entity, defines.wire_connector_id.combinator_input_red)
+  local green_signals = circuit_utils.get_circuit_signals(entity, defines.wire_connector_id.combinator_input_green)
+
+  -- Check if either network has signals
+  local has_red_signals = red_signals and next(red_signals) ~= nil
+  local has_green_signals = green_signals and next(green_signals) ~= nil
+
+  if not has_red_signals and not has_green_signals then
+    -- No signals on either network
+    local no_signals_label = signals_container.add{
+      type = "label",
+      caption = {"logistics-combinator.no-input-signals"}
+    }
+    no_signals_label.style.font_color = {r=0.5, g=0.5, b=0.5}
+    return
+  end
+
+  -- Red circuit signals section
+  logistics_gui.create_signal_network_display(
+    signals_container,
+    {"logistics-combinator.red-circuit"},
+    red_signals,
+    {r=1, g=0.3, b=0.3}  -- Red color
+  )
+
+  -- Green circuit signals section
+  logistics_gui.create_signal_network_display(
+    signals_container,
+    {"logistics-combinator.green-circuit"},
+    green_signals,
+    {r=0.3, g=1, b=0.3}  -- Green color
+  )
+end
+
+--- Create signal display for a single network (red or green)
+-- @param parent LuaGuiElement: Parent container
+-- @param caption LocalisedString: Caption for this network
+-- @param signals table|nil: Signal table {[signal_id] = count}
+-- @param color table: RGB color for the header {r, g, b}
+function logistics_gui.create_signal_network_display(parent, caption, signals, color)
+  if not parent then return end
+
+  -- Network container
+  local network_flow = parent.add{
+    type = "flow",
+    direction = "vertical"
+  }
+  network_flow.style.vertical_spacing = 4
+
+  -- Network label with color
+  local network_label = network_flow.add{
+    type = "label",
+    caption = caption,
+    style = "caption_label"
+  }
+  network_label.style.font_color = color
+
+  -- Check if this network has signals
+  local has_signals = signals and next(signals) ~= nil
+
+  if not has_signals then
+    -- No signals on this network
+    local empty_label = network_flow.add{
+      type = "label",
+      caption = {"logistics-combinator.no-signals-on-network"}
+    }
+    empty_label.style.font_color = {r=0.5, g=0.5, b=0.5}
+    empty_label.style.left_margin = 8
+    return
+  end
+
+  -- Create signal display table
+  local signals_table = network_flow.add{
+    type = "table",
+    column_count = 10,  -- 10 signals per row
+    style = "slot_table"
+  }
+  signals_table.style.left_margin = 8
+
+  -- Display each signal as a sprite-button with count
+  for signal_id, count in pairs(signals) do
+    -- Validate signal_id structure before using it
+    if signal_id and signal_id.name and count and count ~= 0 then
+      -- FACTORIO 2.0 API: When type is "item", the type field is nil when reading
+      -- Default to "item" if type is nil
+      local signal_type = signal_id.type or "item"
+
+      local signal_button = signals_table.add{
+        type = "sprite-button",
+        sprite = signal_type .. "/" .. signal_id.name,
+        number = count,
+        enabled = true,
+        tooltip = {"", signal_id.name, ": ", count},
+        style = "slot_button",
+        tint = color
+      }
+    end
+  end
+end
 
 --- Close logistics combinator GUI for a player
 -- @param player LuaPlayer: Player whose GUI to close
@@ -442,12 +561,6 @@ function logistics_gui.on_selection_changed(event)
     logistics_gui.update_rule_operator(player, element)
     return
   end
-
-  -- Action dropdown changed
-  if element.name:find("_action$") then
-    logistics_gui.update_rule_action(player, element)
-    return
-  end
 end
 
 -- ==============================================================================
@@ -465,6 +578,7 @@ function logistics_gui.add_new_rule(player)
   if not entity_unit_number then return end
 
   -- Create new rule with defaults
+  -- Action is automatic: condition TRUE = inject, condition FALSE = remove
   local new_rule = {
     group = nil,  -- No group selected initially
     condition = {
@@ -472,7 +586,6 @@ function logistics_gui.add_new_rule(player)
       operator = ">",
       value = 0
     },
-    action = "inject",
     last_state = false
   }
 
@@ -562,29 +675,6 @@ function logistics_gui.update_rule_value(player, element)
   combinator_data.rules[rule_index].condition.value = tonumber(element.text) or 0
 end
 
---- Update rule action
--- @param player LuaPlayer: Player making the change
--- @param element LuaGuiElement: Action dropdown element
-function logistics_gui.update_rule_action(player, element)
-  if not player or not element or not element.valid then return end
-
-  local main_frame = player.gui.screen[GUI_NAMES.LOGISTICS_MAIN]
-  if not main_frame or not main_frame.tags then return end
-
-  local entity_unit_number = main_frame.tags.entity_unit_number
-  if not entity_unit_number then return end
-
-  -- Parse rule index from element name: logistics_rule_X_action
-  local rule_index = tonumber(element.name:match("(%d+)_action$"))
-  if not rule_index then return end
-
-  local combinator_data = mc_globals.get_logistics_combinator(entity_unit_number)
-  if not combinator_data or not combinator_data.rules or not combinator_data.rules[rule_index] then return end
-
-  -- Update action (1=inject, 2=remove)
-  combinator_data.rules[rule_index].action = (element.selected_index == 2) and "remove" or "inject"
-end
-
 --- Update rule logistics group
 -- @param player LuaPlayer: Player making the change
 -- @param element LuaGuiElement: Group chooser element
@@ -620,7 +710,6 @@ function logistics_gui.update_rule_group(player, element)
     combinator_data.rules[rule_index] = {
       group = group_name,
       condition = {signal = {type = "virtual", name = "signal-A"}, operator = ">", value = 0},
-      action = "inject",
       last_state = false
     }
   else

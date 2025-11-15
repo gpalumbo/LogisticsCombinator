@@ -68,6 +68,9 @@ end
 ---   Examples: defines.wire_connector_id.combinator_input_red, combinator_input_green,
 ---            combinator_output_red, combinator_output_green, circuit_red, circuit_green
 ---
+---   IMPORTANT: SignalID.type is nil for item signals when reading!
+---   When using signal_id.type, default to "item" if nil: (signal_id.type or "item")
+---
 --- EDGE CASES:
 ---   - Returns nil if entity is invalid
 ---   - Returns nil if no circuit network on specified wire connector
@@ -76,8 +79,9 @@ end
 ---
 --- SIGNAL TABLE FORMAT:
 ---   {
----     [{type="item", name="iron-plate"}] = 100,
----     [{type="virtual", name="signal-A"}] = 50
+---     [{type=nil, name="iron-plate"}] = 100,        -- type is nil for items!
+---     [{type="virtual", name="signal-A"}] = 50,
+---     [{type="fluid", name="water"}] = 25
 ---   }
 ---
 --- TEST CASES:
