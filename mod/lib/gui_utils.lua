@@ -297,6 +297,156 @@ function create_wire_filter_checkboxes(parent, name_prefix)
   }
 end
 
+--- Create complete condition row for complex conditions
+-- Creates a full condition row matching decider combinator style
+-- @param parent LuaGuiElement: Parent container
+-- @param rule_index number: Index of this condition (for naming)
+-- @param condition table: Optional existing condition data to populate
+-- @param is_first boolean: True if this is the first condition (no AND/OR button)
+-- @return table: {flow, and_or_button, left_wire_filter, left_signal, operator, right_type_toggle, right_value, right_signal, right_wire_filter, delete_button}
+function create_condition_row(parent, rule_index, condition, is_first)
+  condition = condition or {}
+  is_first = is_first or (rule_index == 1)
+
+  local row_flow = parent.add{
+    type = "flow",
+    name = "condition_row_" .. rule_index,
+    direction = "horizontal"
+  }
+  row_flow.style.horizontal_spacing = 4
+  row_flow.style.vertical_align = "center"
+  row_flow.style.bottom_margin = 4
+
+  -- AND/OR toggle button (only for non-first conditions)
+  local and_or_button = nil
+  if not is_first then
+    -- Determine current logical operator (default to AND)
+    local logical_op = condition.logical_op or "AND"
+    local is_or = (logical_op == "OR")
+
+    -- Create toggle button
+    and_or_button = row_flow.add{
+      type = "button",
+      name = "cond_" .. rule_index .. "_and_or_toggle",
+      caption = logical_op,
+      tooltip = is_or and {"gui.switch-to-and"} or {"gui.switch-to-or"},
+      style = "button",
+      style_mods = {
+        minimal_width = 50,
+        height = 28
+      }
+    }
+
+    -- Apply left padding for OR conditions (visual precedence indicator)
+    if is_or then
+      row_flow.style.left_padding = 20  -- Left-shift OR rows
+    end
+  end
+
+  -- Left wire filter checkboxes (R/G)
+  local left_wire_filter = create_wire_filter_checkboxes(row_flow, "cond_" .. rule_index .. "_left_wire_")
+
+  -- Set checkbox states from existing condition
+  if condition.left_wire_filter then
+    local states = get_checkboxes_from_wire_filter(condition.left_wire_filter)
+    left_wire_filter.red_checkbox.state = states.red
+    left_wire_filter.green_checkbox.state = states.green
+  end
+
+  -- Left signal selector
+  local left_signal = row_flow.add{
+    type = "choose-elem-button",
+    name = "cond_" .. rule_index .. "_left_signal",
+    elem_type = "signal",
+    signal = condition.left_signal,  -- Use 'signal' parameter during creation, not 'elem_value'
+    tooltip = {"gui.condition-left-signal-tooltip"}
+  }
+  left_signal.style.width = 40
+  left_signal.style.height = 40
+
+  -- Operator dropdown
+  local operator_dropdown = row_flow.add{
+    type = "drop-down",
+    name = "cond_" .. rule_index .. "_operator",
+    tooltip = {"gui.condition-operator-tooltip"}
+  }
+  populate_operator_dropdown(operator_dropdown)
+  if condition.operator then
+    operator_dropdown.selected_index = get_index_from_operator(condition.operator)
+  end
+  operator_dropdown.style.width = 60
+
+  -- Right type toggle (constant vs signal)
+  local right_type_toggle = row_flow.add{
+    type = "sprite-button",
+    name = "cond_" .. rule_index .. "_right_type_toggle",
+    sprite = (condition.right_type == "signal") and "utility/custom_tag_icon" or "utility/slot",
+    tooltip = (condition.right_type == "signal") and {"gui.switch-to-constant"} or {"gui.switch-to-signal"},
+    style = "slot_button"
+  }
+  right_type_toggle.style.width = 28
+  right_type_toggle.style.height = 28
+
+  -- Right value container (for constant)
+  local right_value = row_flow.add{
+    type = "textfield",
+    name = "cond_" .. rule_index .. "_right_value",
+    text = tostring(condition.right_value or 0),
+    numeric = true,
+    allow_negative = true,
+    visible = (condition.right_type ~= "signal"),  -- Hidden when signal mode
+    tooltip = {"gui.condition-value-tooltip"}
+  }
+  right_value.style.width = 80
+
+  -- Right signal selector (for signal comparison)
+  local right_signal = row_flow.add{
+    type = "choose-elem-button",
+    name = "cond_" .. rule_index .. "_right_signal",
+    elem_type = "signal",
+    signal = condition.right_signal,
+    visible = (condition.right_type == "signal"),  -- Visible only in signal mode
+    tooltip = {"gui.condition-right-signal-tooltip"}
+  }
+  right_signal.style.width = 40
+  right_signal.style.height = 40
+
+  -- Right wire filter (only for signal mode)
+  local right_wire_filter = create_wire_filter_checkboxes(row_flow, "cond_" .. rule_index .. "_right_wire_")
+  right_wire_filter.flow.visible = (condition.right_type == "signal")
+
+  -- Set checkbox states from existing condition
+  if condition.right_wire_filter then
+    local states = get_checkboxes_from_wire_filter(condition.right_wire_filter)
+    right_wire_filter.red_checkbox.state = states.red
+    right_wire_filter.green_checkbox.state = states.green
+  end
+
+  -- Delete button
+  local delete_button = row_flow.add{
+    type = "sprite-button",
+    name = "cond_" .. rule_index .. "_delete",
+    sprite = "utility/close",
+    tooltip = {"gui.delete-condition"},
+    style = "tool_button_red"
+  }
+  delete_button.style.width = 28
+  delete_button.style.height = 28
+
+  return {
+    flow = row_flow,
+    and_or_button = and_or_button,
+    left_wire_filter = left_wire_filter,
+    left_signal = left_signal,
+    operator = operator_dropdown,
+    right_type_toggle = right_type_toggle,
+    right_value = right_value,
+    right_signal = right_signal,
+    right_wire_filter = right_wire_filter,
+    delete_button = delete_button
+  }
+end
+
 --- Get wire filter from checkbox states
 -- Converts checkbox states to wire filter string
 -- @param red_enabled boolean: Red checkbox state
@@ -395,8 +545,9 @@ function evaluate_condition(signals, condition)
   end
 end
 
---- Evaluate complex conditions with boolean operators
+--- Evaluate complex conditions with boolean operators and proper precedence
 -- Evaluates an array of conditions with per-condition AND/OR operators
+-- AND has higher precedence than OR (AND binds tighter)
 -- @param conditions table: Array of condition objects with logical_op field
 -- @param red_signals table: Signals from red wire {[signal_id] = count}
 -- @param green_signals table: Signals from green wire {[signal_id] = count}
@@ -405,7 +556,7 @@ end
 -- Condition format:
 --   {
 --     {
---       logical_op = "AND"|"OR",  -- How to combine with PREVIOUS result
+--       logical_op = nil|"AND"|"OR",  -- nil for first, AND/OR for subsequent
 --       left_signal = {type="item", name="iron-plate"},
 --       left_wire_filter = "red"|"green"|"both",
 --       operator = "<"|">"|"="|"≠"|"≤"|"≥",
@@ -417,17 +568,27 @@ end
 --     -- ... more conditions
 --   }
 --
+-- Precedence Rules:
+--   AND has higher precedence than OR
+--   Example: A AND B AND C OR D OR E
+--     Groups: [[A,B,C], [D], [E]]
+--     Evaluation: (A AND B AND C) OR D OR E
+--
+--   Example: A OR B AND C OR D AND E
+--     Groups: [[A], [B,C], [D,E]]
+--     Evaluation: A OR (B AND C) OR (D AND E)
+--
 -- Examples:
 --   evaluate_complex_conditions({{...}}, red, green) => true/false
 --   Empty conditions array => false (no conditions to evaluate)
---   First condition's logical_op is ignored (no previous result)
+--   First condition's logical_op is ignored (should be nil)
 function evaluate_complex_conditions(conditions, red_signals, green_signals)
   if not conditions or #conditions == 0 then
     return false  -- No conditions = false
   end
 
-  local result = nil  -- Start with no result
-
+  -- Step 1: Evaluate all individual conditions and store results with their operators
+  local evaluated_conditions = {}
   for i, cond in ipairs(conditions) do
     -- Get signals for left side based on wire filter
     local left_signals = get_filtered_signals_from_tables(red_signals, green_signals, cond.left_wire_filter)
@@ -449,21 +610,82 @@ function evaluate_complex_conditions(conditions, red_signals, green_signals)
     -- Evaluate this condition
     local cond_result = compare_values(left_value, right_value, cond.operator)
 
-    -- Combine with previous result using logical operator
-    if result == nil then
-      -- First condition, no previous result
-      result = cond_result
-    elseif cond.logical_op == "AND" then
-      result = result and cond_result
-    elseif cond.logical_op == "OR" then
-      result = result or cond_result
+    table.insert(evaluated_conditions, {
+      result = cond_result,
+      logical_op = cond.logical_op  -- nil for first, "AND" or "OR" for subsequent
+    })
+  end
+
+  -- Step 2: Apply AND/OR precedence (AND binds tighter than OR)
+  -- Split conditions into groups separated by OR, evaluate ANDs within each group
+  return evaluate_with_precedence(evaluated_conditions)
+end
+
+--- Evaluate condition results with AND/OR precedence
+-- AND has higher precedence than OR (AND operations are performed first)
+-- @param evaluated_conditions table: Array of {result=boolean, logical_op=nil|"AND"|"OR"}
+-- @return boolean: Final result
+--
+-- Algorithm:
+--   1. Split conditions into groups separated by OR
+--   2. Within each group, AND all conditions together
+--   3. OR all group results together
+--
+-- Example: [true, AND true, AND false, OR true, OR false]
+--   Groups: [[true, true, false], [true], [false]]
+--   AND groups: [false, true, false]
+--   Final OR: false OR true OR false = true
+function evaluate_with_precedence(evaluated_conditions)
+  if #evaluated_conditions == 0 then
+    return false
+  end
+
+  -- Build groups: each group contains consecutive AND conditions (or standalone conditions)
+  local groups = {}
+  local current_group = {}
+
+  for i, cond_data in ipairs(evaluated_conditions) do
+    if i == 1 then
+      -- First condition always starts a group (no logical_op)
+      table.insert(current_group, cond_data.result)
+    elseif cond_data.logical_op == "OR" then
+      -- OR starts a new group (finish current group first)
+      table.insert(groups, current_group)
+      current_group = {cond_data.result}  -- Start new group with this condition
     else
-      -- Unknown operator, treat as AND
-      result = result and cond_result
+      -- AND or nil (treat as AND) - add to current group
+      table.insert(current_group, cond_data.result)
     end
   end
 
-  return result or false
+  -- Don't forget the last group
+  if #current_group > 0 then
+    table.insert(groups, current_group)
+  end
+
+  -- Step 2: Evaluate each group (AND all conditions within group)
+  local group_results = {}
+  for _, group in ipairs(groups) do
+    local group_result = true
+    for _, condition_result in ipairs(group) do
+      group_result = group_result and condition_result
+      if not group_result then
+        break  -- Short-circuit: if any AND fails, whole group is false
+      end
+    end
+    table.insert(group_results, group_result)
+  end
+
+  -- Step 3: OR all group results together
+  local final_result = false
+  for _, group_result in ipairs(group_results) do
+    final_result = final_result or group_result
+    if final_result then
+      break  -- Short-circuit: if any OR succeeds, whole expression is true
+    end
+  end
+
+  return final_result
 end
 
 --- Get filtered signals from separate red/green tables
@@ -518,15 +740,52 @@ function compare_values(left, right, operator)
   end
 end
 
+--- Update visual layout of condition rows based on AND/OR mix
+-- Applies left-shift to OR condition rows when mixed with AND conditions
+-- @param parent LuaGuiElement: Parent element containing condition rows
+-- @param conditions table: Array of conditions with logical_op fields
+function update_condition_row_styles(parent, conditions)
+  if not parent or not parent.valid or not conditions then return end
+
+  -- Check if we have mixed AND/OR operators
+  local has_and = false
+  local has_or = false
+
+  for i, cond in ipairs(conditions) do
+    if i > 1 then  -- Skip first condition (no logical_op)
+      if cond.logical_op == "AND" then
+        has_and = true
+      elseif cond.logical_op == "OR" then
+        has_or = true
+      end
+    end
+  end
+
+  local is_mixed = has_and and has_or
+
+  -- Update each row's style
+  for i, cond in ipairs(conditions) do
+    local row_flow = parent["condition_row_" .. i]
+    if row_flow and row_flow.valid then
+      -- Apply left-shift only to OR rows when mixed
+      if i > 1 and cond.logical_op == "OR" and is_mixed then
+        row_flow.style.left_padding = 20
+      else
+        row_flow.style.left_padding = 0
+      end
+    end
+  end
+end
+
 --- Get signal key for table lookup
 -- Internal helper to convert signal definition to string key
 -- @param signal table: {type = "item"|"fluid"|"virtual", name = "signal-name"}
 -- @return string: Key for signal table lookup
 function get_signal_key(signal)
   if not signal or not signal.name then return "" end
-  -- For simplicity, use name as key. In real implementation, may need type prefix
-  -- to distinguish between item/fluid/virtual signals with same name
-  return signal.type .. ":" .. signal.name
+  local signal_type = signal.type or "item"  -- Default to "item" if type not specified
+  -- Use type:name format to distinguish between item/fluid/virtual signals with same name
+  return signal_type .. ":" .. signal.name
 end
 
 --- Create condition result indicator
@@ -596,11 +855,13 @@ return {
   create_status_label = create_status_label,
   create_condition_selector = create_condition_selector,
   create_wire_filter_checkboxes = create_wire_filter_checkboxes,
+  create_condition_row = create_condition_row,
   create_condition_indicator = create_condition_indicator,
 
   -- Utility functions
   close_gui_for_player = close_gui_for_player,
   update_condition_indicator = update_condition_indicator,
+  update_condition_row_styles = update_condition_row_styles,
 
   -- Wire filter utilities
   get_wire_filter_from_checkboxes = get_wire_filter_from_checkboxes,
@@ -614,6 +875,7 @@ return {
   -- Condition evaluation
   evaluate_condition = evaluate_condition,
   evaluate_complex_conditions = evaluate_complex_conditions,
+  evaluate_with_precedence = evaluate_with_precedence,
   get_signal_key = get_signal_key,
   compare_values = compare_values,
   get_filtered_signals_from_tables = get_filtered_signals_from_tables

@@ -50,6 +50,7 @@ function globals_module.init_globals()
             }
         },
         condition_result = false,  -- Last evaluated boolean result
+        target_group = "",  -- Logistics group name to inject when TRUE, remove when FALSE
         rules = {}, -- condition/action pairs (legacy/actions - not implemented yet)
         connected_entities = {}, -- cached unit_numbers
         injected_groups = {} -- track what we added
@@ -81,6 +82,7 @@ function globals_module.register_logistics_combinator(entity)
         entity = entity,  -- TODO: In production, store unit_number only
         conditions = {},  -- Complex condition array
         condition_result = false,  -- Last evaluated result
+        target_group = "",  -- Logistics group name to inject/remove
         rules = {},
         connected_entities = {},
         injected_groups = {}
@@ -102,6 +104,7 @@ end
 --- @return table|nil Combinator data or nil if not found
 function globals_module.get_logistics_combinator_data(unit_number)
     if not storage.logistics_combinators then
+        game.print("[mission-control] ERR: combinator data missing for " .. unit_number .. " (was not found in storage)")
         return nil
     end
 
@@ -247,6 +250,7 @@ end
 --- @param condition_index number Index of the condition to update
 --- @param condition table The new condition data
 function globals_module.update_logistics_condition(unit_number, condition_index, condition)
+    game.print("[mission-control] DEBUG: updating condition for " .. unit_number .. " at index " .. condition_index)
     if not storage.logistics_combinators then
         return
     end
@@ -254,6 +258,8 @@ function globals_module.update_logistics_condition(unit_number, condition_index,
     local data = storage.logistics_combinators[unit_number]
     if data and data.conditions then
         data.conditions[condition_index] = condition
+        storage.logistics_combinators[unit_number] = data
+        game.print("[mission-control] DEBUG: condition updated successfully")
     end
 end
 
@@ -301,6 +307,36 @@ function globals_module.get_condition_result(unit_number)
     end
 
     return false
+end
+
+--- Set the target logistics group
+--- @param unit_number number The combinator's unit number
+--- @param group_name string The logistics group name
+function globals_module.set_target_group(unit_number, group_name)
+    if not storage.logistics_combinators then
+        return
+    end
+
+    local data = storage.logistics_combinators[unit_number]
+    if data then
+        data.target_group = group_name or ""
+    end
+end
+
+--- Get the target logistics group
+--- @param unit_number number The combinator's unit number
+--- @return string The logistics group name
+function globals_module.get_target_group(unit_number)
+    if not storage.logistics_combinators then
+        return ""
+    end
+
+    local data = storage.logistics_combinators[unit_number]
+    if data then
+        return data.target_group or ""
+    end
+
+    return ""
 end
 
 -- TODO: Add Mission Control network functions

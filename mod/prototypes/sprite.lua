@@ -10,20 +10,20 @@ data:extend({
     priority = "extra-high-no-scale",
     width = 1,
     height = 1,
-    scale = 30,  -- Scale to button size
-    tint = {r = 1.0, g = 0.2, b = 0.2, a = 0.7}  -- Semi-transparent red
+    scale = 35,  -- Scale to button size
+    tint = {r = 1.0, g = 0.2, b = 0.2, a = 0.9}  -- Semi-transparent red
   },
 
   -- Green wire indicator - semi-transparent green overlay
   {
     type = "sprite",
     name = "mission-control-wire-indicator-green",
-    filename = "__core__/graphics/editor-selection.png",
+    filename = "__flib__/graphics/empty.png",
     priority = "extra-high-no-scale",
-    width = 1,
-    height = 1,
-    scale = 30 ,
-    tint = {r = 0.2, g = 1.0, b = 0.2, a = 0.7}  -- Semi-transparent green
+    width = 8,
+    height = 8,
+    scale = 4,
+    tint = {r = 0.2, g = 1.0, b = 0.2, a = 0.1}  -- Semi-transparent green
   },
 
   -- Both wires indicator - semi-transparent yellow overlay
@@ -34,7 +34,7 @@ data:extend({
     priority = "extra-high-no-scale",
     width = 1,
     height = 1,
-    scale = 30,
-    tint = {r = 1.0, g = 1.0, b = 0.3, a = 0.7}  -- Semi-transparent yellow
+    scale = 35,
+    tint = {r = 1.0, g = 1.0, b = 0.3, a = 0.9}  -- Semi-transparent yellow
   }
 })

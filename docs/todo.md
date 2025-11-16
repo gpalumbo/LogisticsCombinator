@@ -366,34 +366,111 @@
 
 - [ ] **Rule configuration**
   - [ ] Group selector: choose-elem-button with elem_type = "logistic-groups"
-  - [ ] Condition builder:
+  - [ ] Multi-condition builder:
+    - [ ] First condition row: NO AND/OR button
+    - [ ] Subsequent condition rows: AND/OR toggle button (default: AND)
     - [ ] Signal picker (choose-elem-button, elem_type = "signal")
     - [ ] Operator dropdown (<, >, =, ≠, ≤, ≥)
     - [ ] Value textfield or signal picker
+    - [ ] [+] button to add condition, [-] button to remove condition
   - [ ] Action radio buttons: Inject / Remove
   - [ ] Delete rule button
 
+- [ ] **AND/OR button behavior**
+  - [ ] Click toggles between AND and OR
+  - [ ] Store and_or state in rule.conditions[i].and_or field
+  - [ ] First condition: and_or = nil (no button shown)
+  - [ ] Default for new conditions: and_or = "AND"
+  - [ ] Update button text/appearance when toggled
+
 - [ ] **Rule display**
   - [ ] Show each rule with status indicator (✓ active / ○ inactive)
-  - [ ] Human-readable format: "Inject 'Fuel Request' when Coal < 100"
+  - [ ] Human-readable format with AND/OR operators
+    - [ ] Example: "Inject 'Fuel' when ((Iron<100 AND Coal<50) OR Rocket-Fuel=0)"
   - [ ] Edit button (opens rule editor)
   - [ ] Delete button (removes rule)
 
 - [ ] **GUI Events**
   - [ ] on_gui_opened - Create logistics GUI
   - [ ] on_gui_closed - Save and destroy GUI
-  - [ ] on_gui_click - Add/delete rules, change actions
+  - [ ] on_gui_click - Add/delete rules, change actions, toggle AND/OR
   - [ ] on_gui_elem_changed - Update group/signal selections
   - [ ] on_gui_text_changed - Update condition values
+  - [ ] on_condition_and_or_toggled - Update layout and state
 
-### 6.3 Condition Evaluation
-- [ ] `evaluate_condition(signals, condition)` - Check if condition met
+### 6.3 Multi-Condition Evaluation with AND/OR Precedence
+- [ ] **Core evaluation function**
+  - [ ] `evaluate_conditions(signals, conditions)` - Evaluate multi-condition expression
+  - [ ] Parse conditions array into AND groups separated by OR
+  - [ ] Evaluate each AND group (all conditions must be true)
+  - [ ] Combine AND group results with OR (any group can be true)
+  - [ ] Return final boolean result
+
+- [ ] **Single condition evaluation**
+  - [ ] `evaluate_single_condition(signals, condition)` - Check one condition
   - [ ] Support operators: <, >, =, ≠, ≤, ≥
   - [ ] Handle missing signals (treat as 0)
   - [ ] Handle signal-to-signal comparison
   - [ ] Handle constant value comparison
 
-### 6.4 Testing
+- [ ] **Precedence algorithm**
+  - [ ] Scan conditions for AND/OR operators
+  - [ ] Group consecutive AND conditions together
+  - [ ] Treat standalone conditions and OR-separated conditions as separate groups
+  - [ ] Example: `A AND B AND C OR D OR E` → groups: `[[A,B,C], [D], [E]]`
+  - [ ] Example: `A OR B AND C OR D AND E` → groups: `[[A], [B,C], [D,E]]`
+
+- [ ] **Edge case handling**
+  - [ ] Single condition (no AND/OR) - evaluate directly
+  - [ ] All AND conditions - single group, all must be true
+  - [ ] All OR conditions - multiple single-condition groups, any can be true
+  - [ ] Mixed AND/OR - proper precedence grouping
+
+- [ ] **Examples to test**
+  - [ ] `(Iron<100 AND Coal<50 AND Copper<200) OR Rocket-Fuel=0`
+    - [ ] Groups: `[[Iron<100, Coal<50, Copper<200], [Rocket-Fuel=0]]`
+    - [ ] Result: (false AND true AND false) OR true = false OR true = **true**
+  - [ ] `Iron>0 OR Coal>0 AND Copper>0 OR Oil>0 AND Water>0`
+    - [ ] Groups: `[[Iron>0], [Coal>0, Copper>0], [Oil>0, Water>0]]`
+    - [ ] Result: A OR (B AND C) OR (D AND E)
+
+### 6.4 GUI Layout Logic (Dynamic AND/OR Visual Indication)
+- [ ] **Detect condition operator mix**
+  - [ ] Scan rule.conditions array for and_or field values
+  - [ ] Determine if rule has: all AND, all OR, or mixed
+  - [ ] Track current layout state
+
+- [ ] **Apply visual styling**
+  - [ ] OR conditions: Apply left-shift/indent styling when AND conditions present
+  - [ ] AND conditions: Normal layout (no shift)
+  - [ ] Use GUI style modifiers or padding to create visual shift
+  - [ ] Ensure first condition never has shift (no AND/OR button)
+
+- [ ] **Dynamic layout updates**
+  - [ ] When AND/OR button toggled: recalculate layout
+  - [ ] Rebuild condition rows with updated styling
+  - [ ] Preserve condition values during layout change
+  - [ ] Update visual appearance immediately
+
+- [ ] **Layout rules**
+  - [ ] If only OR conditions (no ANDs): No shift needed (all equal precedence)
+  - [ ] If only AND conditions: No shift needed (all same group)
+  - [ ] If mixed AND/OR: Apply left-shift to OR buttons/rows
+  - [ ] Example visual:
+    ```
+    [Signal][Op][Value]        ← First (no button)
+    [AND][Signal][Op][Value]   ← AND (no shift)
+    [AND][Signal][Op][Value]   ← AND (no shift)
+    [OR] [Signal][Op][Value]   ← OR (left-shifted)
+    ```
+
+- [ ] **GUI element naming**
+  - [ ] Use consistent naming for condition row elements
+  - [ ] Include index in element names for easy lookup
+  - [ ] Example: `logistics_condition_${index}_and_or_button`
+  - [ ] Enable efficient element updates without full rebuild
+
+### 6.5 Testing
 - [ ] Single rule injects group correctly
 - [ ] Multiple rules on same combinator work independently
 - [ ] Edge triggering prevents repeated injection

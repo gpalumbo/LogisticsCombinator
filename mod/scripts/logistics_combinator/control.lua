@@ -132,6 +132,7 @@ function logistics_combinator_control.register_events()
     script.on_event(defines.events.on_gui_elem_changed, logistics_combinator_gui.on_gui_elem_changed)
     script.on_event(defines.events.on_gui_text_changed, logistics_combinator_gui.on_gui_text_changed)
     script.on_event(defines.events.on_gui_selection_state_changed, logistics_combinator_gui.on_gui_selection_state_changed)
+    script.on_event(defines.events.on_gui_checked_state_changed, logistics_combinator_gui.on_gui_checked_state_changed)
 
     -- Periodic update
     script.on_nth_tick(15, function()

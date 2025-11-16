@@ -132,22 +132,37 @@ end
 **GUI Structure:**
 ```
 [Logistics Combinator]
-┌─────────────────────────────────────┐
-│ Circuit-Controlled Groups           │
-├─────────────────────────────────────┤
-│ [+] Add Controlled Group            │
-│                                     │
-│ Group: [Dropdown: Select Group]     │
-│ Condition: [Signal] [Operator] [Value]│
-│ Action: ◉ Inject ○ Remove          │
-│                                     │
-│ Active Rules: (3)                   │
-│ ✓ Inject "Fuel Request" when Coal < 100│
-│ ✓ Remove "Science" when Signal-S = 0│
-│ ✓ Inject "Emergency" when Health < 50│
-│                                     │
-│ Connected Entities: 4               │
-└─────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│ Circuit-Controlled Groups                        │
+├──────────────────────────────────────────────────┤
+│ [+] Add Controlled Group                         │
+│                                                  │
+│ Group: [Space Platform Fuel ▼]                  │
+│ ┌──────────────────────────────────────────────┐ │
+│ │      [Iron Plate ▼] [< ▼] [100      ]       │ │  ← No AND/OR (first condition)
+│ │ [AND][Coal       ▼] [< ▼] [50       ]       │ │  ← AND button (no indent)
+│ │ [AND][Copper Ore ▼] [< ▼] [200      ]       │ │  ← AND button (no indent)
+│ │ [OR] [Rocket Fuel▼] [= ▼] [0        ]       │ │  ← OR button (left-shifted)
+│ │                                       [+][-] │ │
+│ └──────────────────────────────────────────────┘ │
+│ Action: ◉ Inject ○ Remove                       │
+│                                                  │
+│ Active Rules: (2)                                │
+│ ✓ Inject "Space Platform Fuel"                  │
+│   when ((Iron<100 AND Coal<50 AND Copper<200)   │
+│         OR Rocket-Fuel=0)                        │
+│ ✓ Remove "Science Packs"                        │
+│   when Space-science-pack>1000                   │
+│                                                  │
+│ Connected Entities: 4                            │
+└──────────────────────────────────────────────────┘
+
+Notes:
+- First condition row has NO AND/OR button
+- Subsequent rows have AND/OR toggle (click to switch)
+- AND is the default for new conditions
+- OR conditions are visually left-shifted when AND conditions exist
+- AND has higher precedence than OR in evaluation
 ```
 
 **Operation Logic:**
@@ -157,12 +172,15 @@ local output_network = entity.get_circuit_network(defines.wire_type.red/green, d
 local connected_entities = find_logistics_entities_on_network(output_network)
 
 for each rule in combinator_rules do
-  local condition_met = evaluate_condition(input_signals, rule.condition)
+  -- Evaluate multi-condition expression with AND/OR precedence
+  -- Example: (Iron<100 AND Coal<50 AND Copper<200) OR Rocket-Fuel=0
+  -- Evaluation: AND operations bind tighter than OR
+  local condition_met = evaluate_conditions(input_signals, rule.conditions)
   local state_changed = (condition_met ~= rule.last_state)
-  
+
   if state_changed then
     rule.last_state = condition_met
-    
+
     for each entity in connected_entities do
       if entity.logistic_sections then  -- Has logistics capability
         if rule.action == "inject" and condition_met then
@@ -178,15 +196,110 @@ for each rule in combinator_rules do
     end
   end
 end
+
+-- Multi-condition evaluation algorithm:
+-- function evaluate_conditions(signals, conditions)
+--   Split conditions into groups separated by OR
+--   For each group: evaluate all AND conditions
+--   Combine groups with OR: any group can be true
+--
+--   Example: A AND B AND C OR D OR E
+--     Groups: [A,B,C], [D], [E]
+--     Result: (A AND B AND C) OR D OR E
+-- end
 ```
+
+**Condition Evaluation Rules:**
+
+The logistics combinator follows vanilla Factorio combinator precedence rules:
+
+1. **AND has higher precedence than OR** (AND binds tighter, like multiplication vs addition)
+2. **First condition has NO AND/OR button** (it's the base condition)
+3. **Subsequent conditions have AND/OR toggle buttons** (default: AND)
+4. **OR conditions are visually left-shifted** to indicate lower precedence grouping
+
+**Evaluation Examples:**
+
+**Example 1:** `A AND B AND C OR D OR E`
+```
+Conditions:      A (no button)
+                 AND B
+                 AND C
+                 OR D
+                 OR E
+
+Grouping:        ((A AND B) AND C) OR D OR E
+Evaluation:      First evaluate: A AND B AND C (all must be true)
+                 Then evaluate: D (standalone)
+                 Then evaluate: E (standalone)
+                 Final: (AND-group) OR D OR E (any can be true)
+
+Example signals:  A=true, B=true, C=false, D=true, E=false
+Result:          (true AND true AND false) OR true OR false
+                 = false OR true OR false
+                 = true
+```
+
+**Example 2:** `A OR B AND C OR D AND E`
+```
+Conditions:      A (no button)
+                 OR B
+                 AND C
+                 OR D
+                 AND E
+
+Grouping:        A OR (B AND C) OR (D AND E)
+Evaluation:      First group: A (standalone)
+                 Second group: B AND C (both must be true)
+                 Third group: D AND E (both must be true)
+                 Final: A OR (B AND C) OR (D AND E) (any group can be true)
+
+Example signals:  A=false, B=true, C=true, D=false, E=true
+Result:          false OR (true AND true) OR (false AND true)
+                 = false OR true OR false
+                 = true
+```
+
+**Example 3:** All ANDs (simple case)
+```
+Conditions:      Iron < 100 (no button)
+                 AND Coal < 50
+                 AND Copper < 200
+
+Grouping:        ((Iron < 100) AND (Coal < 50)) AND (Copper < 200)
+Evaluation:      All conditions must be true
+Result:          Single AND-group, all must be satisfied
+```
+
+**Visual Layout Rules:**
+
+When rendering conditions in the GUI:
+- AND conditions: No indentation/shift (normal layout)
+- OR conditions: Left-shifted (visually indicates separate group when ANDs present)
+- This mimics vanilla decider combinator visual grouping
+
+**Implementation Note:**
+
+The edge-triggered behavior applies to the **entire condition expression result**, not individual conditions. The rule only fires when the overall expression (after evaluating all AND/OR operations) transitions from false→true or true→false.
 
 **Implementation Critical:**
 ```lua
 -- Use standard combinator prototype as base
--- Hook into on_wire_added/removed events to track connected entities  
+-- Hook into on_wire_added/removed events to track connected entities
 -- Cache connected entity list, update on wire changes only
 -- Groups injected by combinator tagged with source combinator unit_number for cleanup
 -- On combinator removal, remove all injected groups
+
+-- Condition storage structure (per rule):
+-- rule.conditions = {
+--   {signal_id, operator, value, and_or = nil},  -- First condition (no AND/OR)
+--   {signal_id, operator, value, and_or = "AND"}, -- Subsequent conditions
+--   {signal_id, operator, value, and_or = "OR"},
+--   ...
+-- }
+-- and_or field: nil (first), "AND", or "OR"
+-- Persist and_or state across save/load
+-- Update GUI layout dynamically when and_or toggled
 ```
 
 ## Data Flow Architecture
