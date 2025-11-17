@@ -26,19 +26,15 @@ local GUI_NAMES = {
     CONDITIONS_TABLE = "logistics_combinator_conditions_table",
     ADD_CONDITION_BUTTON = "logistics_combinator_add_condition",
     ACTIONS_FRAME = "logistics_combinator_actions_frame",
-    GROUP_NAME_TEXTFIELD = "logistics_combinator_group_name",
+    SECTIONS_SCROLL = "logistics_combinator_sections_scroll",
+    SECTIONS_TABLE = "logistics_combinator_sections_table",
+    ADD_SECTION_BUTTON = "logistics_combinator_add_section",
+    SECTION_ROW_PREFIX = "logistics_combinator_section_row_",
+    GROUP_PICKER_PREFIX = "logistics_combinator_group_picker_",
+    MULTIPLIER_PREFIX = "logistics_combinator_multiplier_",
+    DELETE_SECTION_PREFIX = "logistics_combinator_delete_section_",
     SIGNAL_GRID_FRAME = "logistics_combinator_signal_grid_frame",
     SIGNAL_GRID_TABLE = "logistics_combinator_signal_grid_table",
-    ADD_RULE_BUTTON = "logistics_combinator_add_rule",
-    RULE_LIST = "logistics_combinator_rule_list",
-    GROUP_SELECTOR = "logistics_combinator_group_selector",
-    SIGNAL_SELECTOR = "logistics_combinator_signal_selector",
-    OPERATOR_DROPDOWN = "logistics_combinator_operator",
-    VALUE_TEXTFIELD = "logistics_combinator_value",
-    ACTION_RADIO_INJECT = "logistics_combinator_action_inject",
-    ACTION_RADIO_REMOVE = "logistics_combinator_action_remove",
-    DELETE_RULE_BUTTON = "logistics_combinator_delete_rule",
-    SAVE_RULE_BUTTON = "logistics_combinator_save_rule",
     CONNECTED_ENTITIES_LABEL = "logistics_combinator_connected_count"
 }
 
@@ -318,9 +314,7 @@ local gui_handlers = {
         local right_signal = condition_row["cond_" .. condition_index .. "_right_signal"]
 
         -- Find right wire filter flow (the parent of the red checkbox)
-        local right_wire_red = condition_row["cond_" .. condition_index .. "_right_wire_red"]
-        local right_wire_flow = right_wire_red and right_wire_red.parent or nil
-
+        local right_wire_flow = find_child_recursive(condition_row, "cond_" .. condition_index .. "_right_wire_")
         -- Update visibility
         if right_value then
             right_value.visible = (condition.right_type == "constant")
@@ -329,6 +323,7 @@ local gui_handlers = {
             right_signal.visible = (condition.right_type == "signal")
         end
         if right_wire_flow then
+            game.print("[mission-control] Debug: Toggling right wire filter visibility for condition " .. condition_index)
             right_wire_flow.visible = (condition.right_type == "signal")
         end
 
@@ -486,19 +481,19 @@ local function get_power_status(entity)
         if energy_ratio >= 0.5 then
             -- Green: Working (>50% energy)
             return {
-                sprite = "utility/health_bar_green_pip",
+                sprite = "utility/status_working",
                 text = "Working"
             }
         elseif energy_ratio > 0 then
             -- Yellow: Low Power (1-50% energy)
             return {
-                sprite = "utility/health_bar_yellow_pip",
+                sprite = "utility/status_yellow",
                 text = "Low Power"
             }
         else
             -- Red: No Power (0% energy)
             return {
-                sprite = "utility/health_bar_red_pip",
+                sprite = "utility/status_not_working",
                 text = "No Power"
             }
         end
@@ -551,30 +546,19 @@ local function create_signal_sub_grid(parent, entity, signals)
         local signal_type = sig_data.signal_id.type or "item"
         local sprite_path = signal_type .. "/" .. sig_data.signal_id.name
 
-        -- Create a flow to hold the color indicator and button
-        local signal_flow = signal_table.add{
-            type = "flow",
-            direction = "vertical",
-            style_mods = {
-                vertical_spacing = 0,
-                padding = 0
-            }
-        }
-
         -- Determine color indicator sprite based on wire color
         local color_sprite
         if sig_data.wire_color == "red" then
             color_sprite = "mission-control-wire-indicator-red"
         elseif sig_data.wire_color == "green" then
             color_sprite = "mission-control-wire-indicator-green"
-        elseif sig_data.wire_color == "both" then
+        else
             color_sprite = "mission-control-wire-indicator-both"
         end
 
+        -- Add colored indicator overlay sprite behind button
 
-
-        -- Create sprite button for signal (keep it clickable)
-        local item_slot = signal_flow.add{
+        local item_slot = signal_table.add{
             type = "sprite-button",
             sprite = sprite_path,
             number = sig_data.count,
@@ -584,18 +568,13 @@ local function create_signal_sub_grid(parent, entity, signals)
             style = "slot_button",
             mouse_button_filter = {"left"}
         }
-
-        -- Add colored indicator overlay sprite behind button
-        if color_sprite then
-            item_slot.add{
-                type = "sprite",
-                sprite = color_sprite,
-                style_mods = {
-                    stretch_image_to_widget_size = true
-                }
+        item_slot.add{
+            type = "sprite",
+            sprite = color_sprite,
+            style_mods = {
+                stretch_image_to_widget_size = true
             }
-        end
-
+        }
 
         ::continue::
     end
@@ -604,7 +583,7 @@ local function create_signal_sub_grid(parent, entity, signals)
     if #signals == 0 then
         scroll.add{
             type = "label",
-            caption = {"", "[font=default-italic]No input signals[/font]"},
+            caption = {"", "No input signals"},
             style_mods = {
                 font_color = {r = 0.6, g = 0.6, b = 0.6}
             }
@@ -618,11 +597,11 @@ end
 --- @param parent LuaGuiElement Parent element to add signal grid to
 --- @param entity LuaEntity The combinator entity
 --- @return table References to created elements
-local function create_signal_grid(parent, entity)
+local function create_signal_grid(parent, entity, signal_grid_frame)
 
 
     -- Create frame for signal grid
-    local grid_frame = parent.add{
+    local grid_frame = signal_grid_frame or parent.add{
         type = "frame",
         name = GUI_NAMES.SIGNAL_GRID_FRAME,
         direction = "vertical",
@@ -669,48 +648,6 @@ local function create_conditions_panel(parent, entity)
         type = "label",
         caption = {"", "[font=default-semibold]Conditions[/font]"}
     }
-
-    -- -- Logical operator selector (OR/AND)
-    -- local logic_flow = frame.add{
-    --     type = "flow",
-    --     direction = "horizontal",
-    --     style_mods = {
-    --         horizontal_spacing = 4,
-    --         bottom_margin = 8
-    --     }
-    -- }
-
-    -- logic_flow.add{
-    --     type = "label",
-    --     caption = "Combine: ",
-    --     style_mods = {
-    --         right_margin = 4
-    --     }
-    -- }
-
-    -- logic_flow.add{
-    --     type = "button",
-    --     name = GUI_NAMES.LOGICAL_OP_OR,
-    --     caption = "OR",
-    --     style = "button",
-    --     tooltip = {"gui.logical-or-tooltip"},
-    --     style_mods = {
-    --         minimal_width = 60,
-    --         height = 28
-    --     }
-    -- }
-
-    -- logic_flow.add{
-    --     type = "button",
-    --     name = GUI_NAMES.LOGICAL_OP_AND,
-    --     caption = "AND",
-    --     style = "button",
-    --     tooltip = {"gui.logical-and-tooltip"},
-    --     style_mods = {
-    --         minimal_width = 60,
-    --         height = 28
-    --     }
-    -- }
 
     -- Scroll pane for condition rows
     local scroll = frame.add{
@@ -762,156 +699,103 @@ end
 --- Format condition expression as human-readable string
 --- @param conditions table Array of conditions
 --- @return string Human-readable condition expression
-local function format_condition_expression(conditions)
-    if not conditions or #conditions == 0 then
-        return "No conditions"
-    end
-
-    local parts = {}
-    for i, cond in ipairs(conditions) do
-        -- Format single condition
-        local signal_name = (cond.left_signal and cond.left_signal.name) or "?"
-        local operator = cond.operator or "?"
-        local right_part
-        if cond.right_type == "signal" then
-            right_part = (cond.right_signal and cond.right_signal.name) or "?"
-        else
-            right_part = tostring(cond.right_value or 0)
-        end
-
-        local condition_str = signal_name .. operator .. right_part
-
-        -- Add logical operator prefix (except for first)
-        if i == 1 then
-            table.insert(parts, condition_str)
-        elseif cond.logical_op == "OR" then
-            table.insert(parts, "OR " .. condition_str)
-        else
-            table.insert(parts, "AND " .. condition_str)
-        end
-    end
-
-    return table.concat(parts, " ")
-end
-
---- Create rule list display
---- @param parent LuaGuiElement Parent element
---- @param entity LuaEntity The combinator entity
-local function create_rule_list(parent, entity)
-    local frame = parent.add{
-        type = "frame",
-        name = "rule_list_frame",
-        direction = "vertical",
-        style = "inside_shallow_frame"
-    }
-    frame.style.padding = 8
-
-    -- Header
-    local header_flow = frame.add{
-        type = "flow",
-        direction = "horizontal",
-        style_mods = {
-            vertical_align = "center",
-            bottom_margin = 8
-        }
-    }
-
-    header_flow.add{
-        type = "label",
-        caption = {"", "[font=default-semibold]Active Rules[/font]"},
-        style_mods = {
-            horizontally_stretchable = true
-        }
-    }
-
-    -- Add rule button
-    header_flow.add{
-        type = "button",
-        name = GUI_NAMES.ADD_RULE_BUTTON,
-        caption = "+ Add Rule",
-        style = "green_button",
-        tooltip = {"gui.add-rule-tooltip"}
-    }
-
-    -- Rule list (scroll pane)
-    local scroll = frame.add{
-        type = "scroll-pane",
-        name = GUI_NAMES.RULE_LIST,
-        direction = "vertical",
-        style = "flib_naked_scroll_pane",
-        style_mods = {
-            maximal_height = 200,
-            minimal_height = 60
-        }
-    }
-
-    -- Get rules from storage and display them
-    local combinator_data = globals.get_logistics_combinator_data(entity.unit_number)
-    if combinator_data and combinator_data.rules then
-        for rule_index, rule in ipairs(combinator_data.rules) do
-            local rule_flow = scroll.add{
-                type = "flow",
-                direction = "horizontal",
-                style_mods = {
-                    vertical_align = "center",
-                    bottom_margin = 4
-                }
-            }
-
-            -- Status indicator
-            local status_icon = rule.is_active and "✓" or "○"
-            rule_flow.add{
-                type = "label",
-                caption = status_icon,
-                style_mods = {
-                    font = "default-semibold",
-                    font_color = rule.is_active and {r = 0, g = 1, b = 0} or {r = 0.6, g = 0.6, b = 0.6}
-                }
-            }
-
-            -- Rule description
-            local action_text = rule.action == "inject" and "Inject" or "Remove"
-            local group_name = rule.group_name or "(no group)"
-            local condition_text = format_condition_expression(rule.conditions or {})
-
-            local description = string.format("%s '%s' when %s", action_text, group_name, condition_text)
-
-            rule_flow.add{
-                type = "label",
-                caption = description,
-                style_mods = {
-                    horizontally_stretchable = true,
-                    single_line = false
-                }
-            }
-
-            -- Delete button
-            rule_flow.add{
-                type = "sprite-button",
-                name = "delete_rule_" .. rule_index,
-                sprite = "utility/close",
-                style = "tool_button_red",
-                tooltip = {"gui.delete-rule-tooltip"}
-            }
-        end
-    else
-        scroll.add{
-            type = "label",
-            caption = {"", "[font=default-italic]No rules configured[/font]"},
-            style_mods = {
-                font_color = {r = 0.6, g = 0.6, b = 0.6}
-            }
-        }
-    end
-
-    return frame
-end
 
 --- Create actions section with rule editor
 --- @param parent LuaGuiElement Parent element
 --- @param entity LuaEntity The combinator entity
-local function create_actions_section(parent, entity)
-    local frame = parent.add{
+--- Create a single logistics section row
+--- @param parent LuaGuiElement The parent table element
+--- @param section_index number The index of this section
+--- @param section_data table|nil The section data {group = "name", multiplier = 1.0}
+--- @param force LuaForce The force to get logistics groups from
+local function create_logistics_section_row(parent, section_index, section_data, force)
+    section_data = section_data or {group = nil, multiplier = 1.0}
+
+    local row = parent.add{
+        type = "flow",
+        name = GUI_NAMES.SECTION_ROW_PREFIX .. section_index,
+        direction = "horizontal",
+        style_mods = {
+            vertical_align = "center",
+            horizontal_spacing = 8,
+            bottom_margin = 4
+        }
+    }
+
+    -- Get logistics groups from force
+    local logistic_groups = force.get_logistic_groups() or {}
+
+    -- Create dropdown items: ["<none>", group1, group2, ...]
+    local dropdown_items = {"<none>"}
+    for _, group_name in ipairs(logistic_groups) do
+        table.insert(dropdown_items, group_name)
+    end
+
+    -- Find selected index (1-based, 1 = "<none>")
+    local selected_index = 1
+    if section_data.group then
+        for i, group_name in ipairs(dropdown_items) do
+            if group_name == section_data.group then
+                selected_index = i
+                break
+            end
+        end
+    end
+
+    -- Group dropdown selector
+    row.add{
+        type = "drop-down",
+        name = GUI_NAMES.GROUP_PICKER_PREFIX .. section_index,
+        items = dropdown_items,
+        selected_index = selected_index,
+        tooltip = {"gui.select-logistics-group"},
+        style_mods = {
+            width = 280,
+            horizontally_stretchable = false
+        }
+    }
+
+    -- Multiplier label
+    row.add{
+        type = "label",
+        caption = "×",
+        style_mods = {
+            font = "default-bold"
+        }
+    }
+
+    -- Multiplier textfield
+    row.add{
+        type = "textfield",
+        name = GUI_NAMES.MULTIPLIER_PREFIX .. section_index,
+        text = tostring(section_data.multiplier or 1.0),
+        numeric = true,
+        allow_decimal = true,
+        tooltip = {"gui.multiplier-tooltip"},
+        style_mods = {
+            width = 60,
+            horizontal_align = "center"
+        }
+    }
+
+    -- Delete section button
+    row.add{
+        type = "sprite-button",
+        name = GUI_NAMES.DELETE_SECTION_PREFIX .. section_index,
+        sprite = "utility/close",
+        tooltip = {"gui.delete-section"},
+        style = "tool_button_red",
+        style_mods = {
+            width = 24,
+            height = 24
+        }
+    }
+
+    return row
+end
+
+local function create_actions_section(parent, entity, actions_frame)
+    local frame = actions_frame or parent.add{
         type = "frame",
         name = GUI_NAMES.ACTIONS_FRAME,
         direction = "vertical",
@@ -922,7 +806,7 @@ local function create_actions_section(parent, entity)
     -- Header
     frame.add{
         type = "label",
-        caption = {"", "[font=default-semibold]Rule Configuration[/font]"},
+        caption = {"", "[font=default-semibold]Logistics Sections[/font]"},
         style_mods = {
             bottom_margin = 8
         }
@@ -931,129 +815,55 @@ local function create_actions_section(parent, entity)
     -- Explanation
     frame.add{
         type = "label",
-        caption = "Configure what happens when the above conditions are met:",
+        caption = "When conditions are TRUE, inject these groups. When FALSE, remove them:",
         style_mods = {
             font_color = {r = 0.7, g = 0.7, b = 0.7},
-            bottom_margin = 8,
+            bottom_margin = 12,
             single_line = false
         }
     }
 
-    -- Group name input
-    local group_flow = frame.add{
-        type = "flow",
-        direction = "horizontal",
+    -- Scroll pane for sections
+    local scroll = frame.add{
+        type = "scroll-pane",
+        name = GUI_NAMES.SECTIONS_SCROLL,
+        vertical_scroll_policy = "auto-and-reserve-space",
+        horizontal_scroll_policy = "never",
         style_mods = {
-            vertical_align = "center",
-            horizontal_spacing = 8,
+            maximal_height = 300,
             bottom_margin = 8
         }
     }
 
-    group_flow.add{
-        type = "label",
-        caption = "Group name:",
-        style_mods = {
-            width = 100
-        }
-    }
-
-    -- Get current group name from storage
-    local combinator_data = globals.get_logistics_combinator_data(entity.unit_number)
-    local current_group = (combinator_data and combinator_data.target_group) or ""
-
-    group_flow.add{
-        type = "textfield",
-        name = GUI_NAMES.GROUP_NAME_TEXTFIELD,
-        text = current_group,
-        tooltip = {"gui.logistics-group-name-tooltip"},
-        clear_and_focus_on_right_click = true,
-        style_mods = {
-            horizontally_stretchable = true
-        }
-    }
-
-    -- Action radio buttons
-    local action_flow = frame.add{
-        type = "flow",
-        direction = "horizontal",
-        style_mods = {
-            vertical_align = "center",
-            horizontal_spacing = 8,
-            bottom_margin = 8
-        }
-    }
-
-    action_flow.add{
-        type = "label",
-        caption = "Action:",
-        style_mods = {
-            width = 100
-        }
-    }
-
-    local radio_flow = action_flow.add{
-        type = "flow",
-        direction = "horizontal",
-        style_mods = {
-            horizontal_spacing = 16
-        }
-    }
-
-    -- Inject radio button
-    local inject_flow = radio_flow.add{
-        type = "flow",
-        direction = "horizontal",
-        style_mods = {
-            horizontal_spacing = 4,
-            vertical_align = "center"
-        }
-    }
-
-    inject_flow.add{
-        type = "radiobutton",
-        name = GUI_NAMES.ACTION_RADIO_INJECT,
-        state = true,  -- Default to inject
-        tooltip = {"gui.action-inject-tooltip"}
-    }
-
-    inject_flow.add{
-        type = "label",
-        caption = "Inject group when TRUE"
-    }
-
-    -- Remove radio button
-    local remove_flow = radio_flow.add{
-        type = "flow",
-        direction = "horizontal",
-        style_mods = {
-            horizontal_spacing = 4,
-            vertical_align = "center"
-        }
-    }
-
-    remove_flow.add{
-        type = "radiobutton",
-        name = GUI_NAMES.ACTION_RADIO_REMOVE,
-        state = false,
-        tooltip = {"gui.action-remove-tooltip"}
-    }
-
-    remove_flow.add{
-        type = "label",
-        caption = "Remove group when TRUE"
-    }
-
-    -- Save rule button
-    frame.add{
-        type = "button",
-        name = GUI_NAMES.SAVE_RULE_BUTTON,
-        caption = "Save as New Rule",
-        style = "confirm_button",
-        tooltip = {"gui.save-rule-tooltip"},
+    -- Table to hold section rows
+    local sections_table = scroll.add{
+        type = "table",
+        name = GUI_NAMES.SECTIONS_TABLE,
+        column_count = 1,
         style_mods = {
             horizontally_stretchable = true,
-            top_margin = 8
+            vertical_spacing = 4
+        }
+    }
+
+    -- Get combinator data and create rows for existing sections
+    local combinator_data = globals.get_logistics_combinator_data(entity.unit_number)
+    if combinator_data and combinator_data.logistics_sections then
+        for i, section in ipairs(combinator_data.logistics_sections) do
+            create_logistics_section_row(sections_table, i, section, entity.force)
+        end
+    end
+
+    -- Add section button
+    frame.add{
+        type = "button",
+        name = GUI_NAMES.ADD_SECTION_BUTTON,
+        caption = "[img=utility/add] Add Section",
+        style = "tool_button",
+        tooltip = {"gui.add-section-tooltip"},
+        style_mods = {
+            horizontally_stretchable = true,
+            bottom_margin = 8
         }
     }
 
@@ -1063,7 +873,7 @@ local function create_actions_section(parent, entity)
         name = GUI_NAMES.CONNECTED_ENTITIES_LABEL,
         caption = "Connected entities: 0",
         style_mods = {
-            top_margin = 8,
+            top_margin = 4,
             font_color = {r = 0.7, g = 0.7, b = 0.7}
         }
     }
@@ -1204,9 +1014,6 @@ function logistics_combinator_gui.create_gui(player, entity)
     -- Add actions section (rule editor)
     create_actions_section(content_frame, entity)
 
-    -- Add rule list
-    create_rule_list(content_frame, entity)
-
     -- Add signal grid
     create_signal_grid(content_frame, entity)
 
@@ -1254,9 +1061,9 @@ function logistics_combinator_gui.update_gui(player)
     local signal_grid_frame = frame[GUI_NAMES.SIGNAL_GRID_FRAME]
     if signal_grid_frame then
         -- Destroy and recreate signal grid for fresh data
-        signal_grid_frame.destroy()
+        signal_grid_frame.clear();
         local content_frame = frame.children[2]  -- The inside_shallow_frame
-        create_signal_grid(content_frame, entity)
+        create_signal_grid(content_frame, entity, signal_grid_frame)
     end
 
     -- TODO: Update rule list display
@@ -1341,34 +1148,72 @@ function logistics_combinator_gui.on_gui_click(event)
         return
     end
 
-    -- Handle save rule button
-    if element.name == GUI_NAMES.SAVE_RULE_BUTTON then
-        gui_handlers.save_rule(event)
-        return
-    end
+    -- Handle add section button
+    if element.name == GUI_NAMES.ADD_SECTION_BUTTON then
+        local player = game.get_player(event.player_index)
+        if not player then return end
 
-    -- Handle add rule button (same as save for now)
-    if element.name == GUI_NAMES.ADD_RULE_BUTTON then
-        gui_handlers.save_rule(event)
-        return
-    end
+        local gui_state = globals.get_player_gui_state(player.index)
+        if not gui_state or not gui_state.open_entity then return end
 
-    -- Handle delete rule button
-    if element.name:match("^delete_rule_%d+$") then
-        local rule_index = tonumber(element.name:match("^delete_rule_(%d+)$"))
-        if rule_index then
-            local player = game.get_player(event.player_index)
-            if player then
-                local gui_state = globals.get_player_gui_state(player.index)
-                if gui_state then
-                    globals.remove_logistics_rule(gui_state.open_entity, rule_index)
-                    player.create_local_flying_text{
-                        text = "Rule deleted",
-                        create_at_cursor = true
-                    }
-                end
-            end
+        local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
+        if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then return end
+
+        local entity = combinator_data.entity
+
+        -- Add new section with default values
+        globals.add_logistics_section(entity.unit_number, {
+            group = nil,
+            multiplier = 1.0
+        })
+
+        -- Refresh the actions section to show new row
+        local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
+        if not frame then return end
+
+        local content_frame = frame.children[2]
+        if not content_frame then return end
+
+        local actions_frame = content_frame[GUI_NAMES.ACTIONS_FRAME]
+        if actions_frame then
+            actions_frame.clear()
         end
+        create_actions_section(content_frame, entity, actions_frame)
+        return
+    end
+
+    -- Handle delete section button
+    if element.name:match("^" .. GUI_NAMES.DELETE_SECTION_PREFIX) then
+        local section_index = tonumber(element.name:match("^" .. GUI_NAMES.DELETE_SECTION_PREFIX .. "(%d+)$"))
+        if not section_index then return end
+
+        local player = game.get_player(event.player_index)
+        if not player then return end
+
+        local gui_state = globals.get_player_gui_state(player.index)
+        if not gui_state or not gui_state.open_entity then return end
+
+        local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
+        if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then return end
+
+        local entity = combinator_data.entity
+
+        -- Remove section from storage
+        globals.remove_logistics_section(entity.unit_number, section_index)
+
+        -- Refresh the actions section to update indices
+        local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
+        if not frame then return end
+
+        local content_frame = frame.children[2]
+        if not content_frame then return end
+
+        local actions_frame = content_frame[GUI_NAMES.ACTIONS_FRAME]
+        if actions_frame then
+            actions_frame.clear()
+            create_actions_section(content_frame, entity, actions_frame)
+        end
+
         return
     end
 end
@@ -1420,6 +1265,7 @@ function logistics_combinator_gui.on_gui_elem_changed(event)
         end
         return
     end
+
 end
 
 --- Handle GUI text changed events
@@ -1454,9 +1300,21 @@ function logistics_combinator_gui.on_gui_text_changed(event)
         return
     end
 
-    -- Handle group name changed
-    if element.name == GUI_NAMES.GROUP_NAME_TEXTFIELD then
-        globals.set_target_group(entity.unit_number, element.text)
+    -- Handle multiplier changed
+    if element.name:match("^" .. GUI_NAMES.MULTIPLIER_PREFIX) then
+        local section_index = tonumber(element.name:match("^" .. GUI_NAMES.MULTIPLIER_PREFIX .. "(%d+)$"))
+        if section_index then
+            local sections = globals.get_logistics_sections(entity.unit_number)
+            if sections and sections[section_index] then
+                -- Update the multiplier in the section
+                local section = sections[section_index]
+                local multiplier = tonumber(element.text) or 1.0
+                -- Ensure multiplier is positive
+                if multiplier < 0 then multiplier = 0 end
+                section.multiplier = multiplier
+                globals.update_logistics_section(entity.unit_number, section_index, section)
+            end
+        end
         return
     end
 end
@@ -1489,6 +1347,23 @@ function logistics_combinator_gui.on_gui_selection_state_changed(event)
             globals.update_logistics_condition(entity.unit_number, condition_index, condition)
             -- Re-evaluate with updated operator
             evaluate_and_update_indicator(player, entity)
+        end
+        return
+    end
+
+    -- Handle logistics group picker changed
+    if element.name:match("^" .. GUI_NAMES.GROUP_PICKER_PREFIX) then
+        local section_index = tonumber(element.name:match("^" .. GUI_NAMES.GROUP_PICKER_PREFIX .. "(%d+)$"))
+        if section_index then
+            local sections = globals.get_logistics_sections(entity.unit_number)
+            if sections and sections[section_index] then
+                -- Get selected group name from dropdown
+                local selected_item = element.items[element.selected_index]
+                -- Update the group in the section ("<none>" means nil)
+                local section = sections[section_index]
+                section.group = (selected_item == "<none>") and nil or selected_item
+                globals.update_logistics_section(entity.unit_number, section_index, section)
+            end
         end
         return
     end
@@ -1544,11 +1419,14 @@ function logistics_combinator_gui.on_gui_checked_state_changed(event)
                 local scroll = conditions_frame and conditions_frame[GUI_NAMES.CONDITIONS_SCROLL]
                 local conditions_table = scroll and scroll[GUI_NAMES.CONDITIONS_TABLE]
                 local condition_row = conditions_table and conditions_table["condition_row_" .. condition_index]
-
                 if condition_row then
-                    local red_checkbox = condition_row["cond_" .. condition_index .. "_left_wire_red"]
-                    local green_checkbox = condition_row["cond_" .. condition_index .. "_left_wire_green"]
+                    -- Find checkboxes by recursively searching nested GUI structure
+                    -- The checkboxes are inside filter_flow -> checkbox_panel (unnamed flows)
+                    local red_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_left_wire_red")
+                    local green_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_left_wire_green")
+
                     if red_checkbox and green_checkbox then
+                        game.print("[mission-control] Debug: Left wire filter changed for condition " .. condition_index)
                         -- Get the condition, modify it, and update storage explicitly
                         local condition = combinator_data.conditions[condition_index]
                         condition.left_wire_filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
@@ -1577,8 +1455,9 @@ function logistics_combinator_gui.on_gui_checked_state_changed(event)
                 local condition_row = conditions_table and conditions_table["condition_row_" .. condition_index]
 
                 if condition_row then
-                    local red_checkbox = condition_row["cond_" .. condition_index .. "_right_wire_red"]
-                    local green_checkbox = condition_row["cond_" .. condition_index .. "_right_wire_green"]
+                    local red_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_right_wire_red")
+                    local green_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_right_wire_green")
+
                     if red_checkbox and green_checkbox then
                         -- Get the condition, modify it, and update storage explicitly
                         local condition = combinator_data.conditions[condition_index]

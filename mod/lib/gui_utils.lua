@@ -34,6 +34,19 @@ local STATUS_ICONS = {
   warning = "[img=utility/warning_icon]"
 }
 
+function find_child_recursive(element, name)
+    if element.name == name then
+        return element
+    end
+    if element.children then
+        for _, child in pairs(element.children) do
+            local found = find_child_recursive(child, name)
+            if found then return found end
+        end
+    end
+    return nil
+end
+
 -- ==============================================================================
 -- GUI COMPONENT CREATION
 -- ==============================================================================
@@ -251,13 +264,22 @@ end
 function create_wire_filter_checkboxes(parent, name_prefix)
   local filter_flow = parent.add{
     type = "flow",
+    name = name_prefix,
+    direction = "vertical",
+    visible = true
+  }
+  filter_flow.style.vertical_spacing = 0
+  filter_flow.style.horizontal_align = "center"
+
+  local checkbox_panel = filter_flow.add{
+    type = "flow",
     direction = "horizontal"
   }
-  filter_flow.style.horizontal_spacing = 2
-  filter_flow.style.vertical_align = "center"
+  checkbox_panel.style.horizontal_spacing = 2
+  checkbox_panel.style.vertical_align = "center"
 
   -- Red checkbox
-  local red_checkbox = filter_flow.add{
+  local red_checkbox = checkbox_panel.add{
     type = "checkbox",
     name = name_prefix .. "red",
     state = true,  -- Default: both enabled
@@ -267,14 +289,22 @@ function create_wire_filter_checkboxes(parent, name_prefix)
   red_checkbox.style.height = 20
 
   -- Red label
-  filter_flow.add{
+  checkbox_panel.add{
     type = "label",
     caption = "[color=red]R[/color]",
     tooltip = {"gui.wire-filter-red-tooltip"}
   }
 
+
+  checkbox_panel = filter_flow.add{
+    type = "flow",
+    direction = "horizontal"
+  }
+  checkbox_panel.style.horizontal_spacing = 2
+  checkbox_panel.style.vertical_align = "center"
+
   -- Green checkbox
-  local green_checkbox = filter_flow.add{
+  local green_checkbox = checkbox_panel.add{
     type = "checkbox",
     name = name_prefix .. "green",
     state = true,  -- Default: both enabled
@@ -284,7 +314,7 @@ function create_wire_filter_checkboxes(parent, name_prefix)
   green_checkbox.style.height = 20
 
   -- Green label
-  filter_flow.add{
+  checkbox_panel.add{
     type = "label",
     caption = "[color=green]G[/color]",
     tooltip = {"gui.wire-filter-green-tooltip"}
@@ -346,12 +376,9 @@ function create_condition_row(parent, rule_index, condition, is_first)
   -- Left wire filter checkboxes (R/G)
   local left_wire_filter = create_wire_filter_checkboxes(row_flow, "cond_" .. rule_index .. "_left_wire_")
 
-  -- Set checkbox states from existing condition
-  if condition.left_wire_filter then
-    local states = get_checkboxes_from_wire_filter(condition.left_wire_filter)
-    left_wire_filter.red_checkbox.state = states.red
-    left_wire_filter.green_checkbox.state = states.green
-  end
+  local states = get_checkboxes_from_wire_filter(condition.left_wire_filter)
+  left_wire_filter.red_checkbox.state = states.red
+  left_wire_filter.green_checkbox.state = states.green
 
   -- Left signal selector
   local left_signal = row_flow.add{
@@ -416,11 +443,10 @@ function create_condition_row(parent, rule_index, condition, is_first)
   right_wire_filter.flow.visible = (condition.right_type == "signal")
 
   -- Set checkbox states from existing condition
-  if condition.right_wire_filter then
-    local states = get_checkboxes_from_wire_filter(condition.right_wire_filter)
-    right_wire_filter.red_checkbox.state = states.red
-    right_wire_filter.green_checkbox.state = states.green
-  end
+
+  local states = get_checkboxes_from_wire_filter(condition.right_wire_filter)
+  right_wire_filter.red_checkbox.state = states.red
+  right_wire_filter.green_checkbox.state = states.green
 
   -- Delete button
   local delete_button = row_flow.add{
@@ -590,6 +616,14 @@ function evaluate_complex_conditions(conditions, red_signals, green_signals)
   -- Step 1: Evaluate all individual conditions and store results with their operators
   local evaluated_conditions = {}
   for i, cond in ipairs(conditions) do
+    -- Debug: Log wire filter values
+    if game then
+      game.print(string.format("[DEBUG] Condition %d: left_wire_filter=%s, right_wire_filter=%s",
+        i,
+        tostring(cond.left_wire_filter or "nil"),
+        tostring(cond.right_wire_filter or "nil")))
+    end
+
     -- Get signals for left side based on wire filter
     local left_signals = get_filtered_signals_from_tables(red_signals, green_signals, cond.left_wire_filter)
 
@@ -597,18 +631,41 @@ function evaluate_complex_conditions(conditions, red_signals, green_signals)
     local left_key = get_signal_key(cond.left_signal)
     local left_value = left_signals[left_key] or 0
 
+    -- Debug: Log signal values
+    if game and left_key ~= "" then
+      game.print(string.format("[DEBUG]   Left signal %s = %d (from wire_filter=%s)",
+        left_key, left_value, tostring(cond.left_wire_filter or "nil")))
+    end
+
     -- Get right signal value
     local right_value
     if cond.right_type == "signal" then
       local right_signals = get_filtered_signals_from_tables(red_signals, green_signals, cond.right_wire_filter)
       local right_key = get_signal_key(cond.right_signal)
       right_value = right_signals[right_key] or 0
+
+      -- Debug: Log right signal values
+      if game and right_key ~= "" then
+        game.print(string.format("[DEBUG]   Right signal %s = %d (from wire_filter=%s)",
+          right_key, right_value, tostring(cond.right_wire_filter or "nil")))
+      end
     else
       right_value = cond.right_value or 0
+
+      -- Debug: Log right constant value
+      if game then
+        game.print(string.format("[DEBUG]   Right constant = %d", right_value))
+      end
     end
 
     -- Evaluate this condition
     local cond_result = compare_values(left_value, right_value, cond.operator)
+
+    -- Debug: Log evaluation result
+    if game then
+      game.print(string.format("[DEBUG]   Evaluation: %d %s %d = %s",
+        left_value, cond.operator or "?", right_value, tostring(cond_result)))
+    end
 
     table.insert(evaluated_conditions, {
       result = cond_result,
@@ -692,10 +749,20 @@ end
 -- Helper for complex condition evaluation
 -- @param red_signals table: Signals from red wire
 -- @param green_signals table: Signals from green wire
--- @param wire_filter string: "red", "green", or "both"
+-- @param wire_filter string: "red", "green", "both", or "none"
 -- @return table: Filtered signal table
 function get_filtered_signals_from_tables(red_signals, green_signals, wire_filter)
   local result = {}
+
+  -- Default to "both" if wire_filter is nil or invalid (defensive programming)
+  if not wire_filter or wire_filter == "" then
+    wire_filter = "both"
+  end
+
+  -- Handle "none" case explicitly - return empty table (all signals = 0)
+  if wire_filter == "none" then
+    return result
+  end
 
   if wire_filter == "red" or wire_filter == "both" then
     if red_signals then
@@ -859,6 +926,7 @@ return {
   create_condition_indicator = create_condition_indicator,
 
   -- Utility functions
+  find_child_recursive = find_child_recursive,
   close_gui_for_player = close_gui_for_player,
   update_condition_indicator = update_condition_indicator,
   update_condition_row_styles = update_condition_row_styles,

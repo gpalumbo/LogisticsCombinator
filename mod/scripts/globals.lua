@@ -50,10 +50,19 @@ function globals_module.init_globals()
             }
         },
         condition_result = false,  -- Last evaluated boolean result
-        target_group = "",  -- Logistics group name to inject when TRUE, remove when FALSE
-        rules = {}, -- condition/action pairs (legacy/actions - not implemented yet)
+        last_condition_state = false,  -- Previous condition result for edge triggering
+        logistics_sections = {  -- Sections to inject when condition is TRUE
+            {
+                group = "Space Platform Fuel",  -- Logistics group name
+                multiplier = 1.0  -- Optional multiplier for group quantities
+            }
+        },
         connected_entities = {}, -- cached unit_numbers
-        injected_groups = {} -- track what we added
+        injected_tracking = {  -- Track what we injected per entity
+            [entity_unit_number] = {
+                section_indices = {}  -- Array of section indices we added
+            }
+        }
     }
     ]]
 
@@ -82,10 +91,10 @@ function globals_module.register_logistics_combinator(entity)
         entity = entity,  -- TODO: In production, store unit_number only
         conditions = {},  -- Complex condition array
         condition_result = false,  -- Last evaluated result
-        target_group = "",  -- Logistics group name to inject/remove
-        rules = {},
+        last_condition_state = false,  -- Previous result for edge triggering
+        logistics_sections = {},  -- Array of {group, multiplier} sections
         connected_entities = {},
-        injected_groups = {}
+        injected_tracking = {}  -- Track what we injected per entity
     }
 end
 
@@ -111,67 +120,116 @@ function globals_module.get_logistics_combinator_data(unit_number)
     return storage.logistics_combinators[unit_number]
 end
 
---- Add a logistics rule to a combinator
+--- Add a logistics section to a combinator
 --- @param unit_number number The combinator's unit number
---- @param rule table The rule to add
-function globals_module.add_logistics_rule(unit_number, rule)
+--- @param section table The section to add {group = "name", multiplier = 1.0}
+function globals_module.add_logistics_section(unit_number, section)
     if not storage.logistics_combinators then
         return
     end
 
     local data = storage.logistics_combinators[unit_number]
     if data then
-        table.insert(data.rules, rule)
+        if not data.logistics_sections then
+            data.logistics_sections = {}
+        end
+        table.insert(data.logistics_sections, section)
     end
 end
 
---- Remove a logistics rule from a combinator
+--- Remove a logistics section from a combinator
 --- @param unit_number number The combinator's unit number
---- @param rule_index number Index of the rule to remove
-function globals_module.remove_logistics_rule(unit_number, rule_index)
+--- @param section_index number Index of the section to remove
+function globals_module.remove_logistics_section(unit_number, section_index)
     if not storage.logistics_combinators then
         return
     end
 
     local data = storage.logistics_combinators[unit_number]
-    if data and data.rules[rule_index] then
-        table.remove(data.rules, rule_index)
+    if data and data.logistics_sections and data.logistics_sections[section_index] then
+        table.remove(data.logistics_sections, section_index)
     end
 end
 
---- Track an injected logistics group
+--- Update a logistics section in a combinator
+--- @param unit_number number The combinator's unit number
+--- @param section_index number Index of the section to update
+--- @param section table The new section data {group = "name", multiplier = 1.0}
+function globals_module.update_logistics_section(unit_number, section_index, section)
+    if not storage.logistics_combinators then
+        return
+    end
+
+    local data = storage.logistics_combinators[unit_number]
+    if data and data.logistics_sections then
+        data.logistics_sections[section_index] = section
+    end
+end
+
+--- Get all logistics sections for a combinator
+--- @param unit_number number The combinator's unit number
+--- @return table Array of logistics sections
+function globals_module.get_logistics_sections(unit_number)
+    if not storage.logistics_combinators then
+        return {}
+    end
+
+    local data = storage.logistics_combinators[unit_number]
+    if data and data.logistics_sections then
+        return data.logistics_sections
+    end
+
+    return {}
+end
+
+--- Track an injected section index
 --- @param combinator_unit_number number The combinator that injected
 --- @param entity_unit_number number The entity that received
---- @param group_name string The group that was injected
-function globals_module.track_injected_group(combinator_unit_number, entity_unit_number, group_name)
+--- @param section_index number The section index that was injected
+function globals_module.track_injected_section(combinator_unit_number, entity_unit_number, section_index)
     if not storage.logistics_combinators then
         return
     end
 
     local data = storage.logistics_combinators[combinator_unit_number]
     if data then
-        data.injected_groups[entity_unit_number] = data.injected_groups[entity_unit_number] or {}
-        data.injected_groups[entity_unit_number][group_name] = true
+        if not data.injected_tracking then
+            data.injected_tracking = {}
+        end
+        if not data.injected_tracking[entity_unit_number] then
+            data.injected_tracking[entity_unit_number] = {section_indices = {}}
+        end
+        table.insert(data.injected_tracking[entity_unit_number].section_indices, section_index)
     end
 end
 
---- Untrack an injected logistics group
---- @param combinator_unit_number number The combinator that injected
---- @param entity_unit_number number The entity that had the group
---- @param group_name string The group that was removed
-function globals_module.untrack_injected_group(combinator_unit_number, entity_unit_number, group_name)
+--- Clear all injection tracking for a combinator
+--- @param combinator_unit_number number The combinator
+function globals_module.clear_injected_tracking(combinator_unit_number)
     if not storage.logistics_combinators then
         return
     end
 
     local data = storage.logistics_combinators[combinator_unit_number]
-    if data and data.injected_groups[entity_unit_number] then
-        data.injected_groups[entity_unit_number][group_name] = nil
-        -- Clean up empty tables
-        if next(data.injected_groups[entity_unit_number]) == nil then
-            data.injected_groups[entity_unit_number] = nil
-        end
+    if data then
+        data.injected_tracking = {}
     end
+end
+
+--- Get injection tracking for a combinator
+--- @param combinator_unit_number number The combinator
+--- @return table Tracking data
+function globals_module.get_injected_tracking(combinator_unit_number)
+    if not storage.logistics_combinators then
+        return {}
+    end
+
+    local data = storage.logistics_combinators[combinator_unit_number]
+    if data and data.injected_tracking then
+        return data.injected_tracking
+    end
+
+    return {}
 end
 
 --- Set player GUI entity reference
@@ -309,34 +367,34 @@ function globals_module.get_condition_result(unit_number)
     return false
 end
 
---- Set the target logistics group
+--- Set the last condition state
 --- @param unit_number number The combinator's unit number
---- @param group_name string The logistics group name
-function globals_module.set_target_group(unit_number, group_name)
+--- @param state boolean The last condition state
+function globals_module.set_last_condition_state(unit_number, state)
     if not storage.logistics_combinators then
         return
     end
 
     local data = storage.logistics_combinators[unit_number]
     if data then
-        data.target_group = group_name or ""
+        data.last_condition_state = state
     end
 end
 
---- Get the target logistics group
+--- Get the last condition state
 --- @param unit_number number The combinator's unit number
---- @return string The logistics group name
-function globals_module.get_target_group(unit_number)
+--- @return boolean The last condition state
+function globals_module.get_last_condition_state(unit_number)
     if not storage.logistics_combinators then
-        return ""
+        return false
     end
 
     local data = storage.logistics_combinators[unit_number]
     if data then
-        return data.target_group or ""
+        return data.last_condition_state or false
     end
 
-    return ""
+    return false
 end
 
 -- TODO: Add Mission Control network functions
