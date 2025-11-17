@@ -13,8 +13,8 @@ logistics_combinator.minable = {
 
 -- Size and collision
 -- Size: 2x1 (standard combinator size)
-logistics_combinator.collision_box = {{-0.85, -0.35}, {0.85, 0.35}}
-logistics_combinator.selection_box = {{-1, -0.5}, {1, 0.5}}
+logistics_combinator.collision_box = {{-0.35, -0.85}, {0.35, 0.85}}
+logistics_combinator.selection_box = {{-0.5, -1}, {0.5, 1}}
 
 -- Health and resistance (scales with quality)
 logistics_combinator.max_health = 150
@@ -29,16 +29,17 @@ logistics_combinator.energy_source = {
 logistics_combinator.active_energy_usage = "1kW"
 
 -- Circuit connections (3 terminals: red_in, green_in, output)
--- TODO: Configure proper circuit connection points
-logistics_combinator.input_connection_bounding_box = {{-1, -0.5}, {1, 0.5}}
-logistics_combinator.output_connection_bounding_box = {{-1, -0.5}, {1, 0.5}}
+-- Note: input_connection_points and output_connection_points are inherited from decider-combinator deepcopy
+-- Split bounding boxes so they don't overlap - input on bottom half, output on top half
+logistics_combinator.input_connection_bounding_box =  {{-0.5, 0}, {0.5, 1}}   -- Bottom half
+logistics_combinator.output_connection_bounding_box = {{-0.5, -1}, {0.5, 0}} -- Top half
 
 -- Graphics and sprites
 -- TODO: Replace with custom graphics
 -- For now, tint the decider combinator sprites
 if logistics_combinator.sprites then
     -- Apply a slight blue tint to differentiate
-    logistics_combinator.sprites.tint = {r = 0.8, g = 0.9, b = 1, a = 0.5}
+    logistics_combinator.sprites.tint = {r = 0.7, g = 0.7, b = 1, a = 0.5}
 end
 
 -- Fast replaceable group

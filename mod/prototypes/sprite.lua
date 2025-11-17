@@ -6,7 +6,7 @@ data:extend({
   {
     type = "sprite",
     name = "mission-control-wire-indicator-red",
-    filename = "__core__/graphics/color-effect-small.png",
+    filename = "__core__/graphics/editor-selection.png",
     width = 1,
     height = 1,
     scale = 35,  -- Scale to button size
@@ -17,7 +17,7 @@ data:extend({
   {
     type = "sprite",
     name = "mission-control-wire-indicator-green",
-    filename = "__core__/graphics/color-effect-small.png",
+    filename = "__core__/graphics/editor-selection.png",
     width = 1,
     height = 1,
     scale = 35 ,
@@ -28,7 +28,7 @@ data:extend({
   {
     type = "sprite",
     name = "mission-control-wire-indicator-both",
-    filename = "__core__/graphics/color-effect-small.png",
+    filename = "__core__/graphics/editor-selection.png",
     width = 1,
     height = 1,
     scale = 35,
