@@ -8,6 +8,7 @@ local circuit_utils = require("lib.circuit_utils")
 
 local logistics_combinator_gui = {}
 
+
 -- GUI element names
 local GUI_NAMES = {
     MAIN_FRAME = "logistics_combinator_frame",
@@ -37,6 +38,72 @@ local GUI_NAMES = {
     SIGNAL_GRID_TABLE = "logistics_combinator_signal_grid_table",
     CONNECTED_ENTITIES_LABEL = "logistics_combinator_connected_count"
 }
+
+
+-- ============================================================================
+-- UTILITY FUNCTIONS for reducing repetitive GUI traversal
+-- ============================================================================
+
+--- Get combinator data from player's GUI state
+--- @param player LuaPlayer
+--- @return table|nil combinator_data, LuaEntity|nil entity
+local function get_combinator_data_from_player(player)
+    if not player then return nil, nil end
+
+    local gui_state = globals.get_player_gui_state(player.index)
+    if not gui_state then return nil, nil end
+
+    local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
+    if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then
+        return nil, nil
+    end
+
+    return combinator_data, combinator_data.entity
+end
+
+--- Get condition from combinator data by index
+--- @param combinator_data table
+--- @param condition_index number
+--- @return table|nil condition
+local function get_condition_by_index(combinator_data, condition_index)
+    if not combinator_data or not combinator_data.conditions then return nil end
+    if not combinator_data.conditions[condition_index] then return nil end
+    return combinator_data.conditions[condition_index]
+end
+
+--- Get conditions table GUI element
+--- @param player LuaPlayer
+--- @return LuaGuiElement|nil conditions_table
+local function get_conditions_table(player)
+    local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
+    if not frame then return nil end
+
+    local content_frame = frame.children[2]  -- inside_shallow_frame
+    if not content_frame then return nil end
+
+    local conditions_frame = content_frame[GUI_NAMES.CONDITIONS_FRAME]
+    if not conditions_frame then return nil end
+
+    local scroll = conditions_frame[GUI_NAMES.CONDITIONS_SCROLL]
+    if not scroll then return nil end
+
+    return scroll[GUI_NAMES.CONDITIONS_TABLE]
+end
+
+--- Get condition row GUI element by index (uses get_conditions_table)
+--- @param player LuaPlayer
+--- @param condition_index number
+--- @return LuaGuiElement|nil condition_row
+local function get_condition_row(player, condition_index)
+    local conditions_table = get_conditions_table(player)
+    if not conditions_table then return nil end
+
+    return conditions_table["condition_row_" .. condition_index]
+end
+
+-- ============================================================================
+-- END UTILITY FUNCTIONS
+-- ============================================================================
 
 --- Evaluate combinator conditions and update indicator
 --- @param player LuaPlayer The player viewing the GUI
@@ -127,24 +194,11 @@ local gui_handlers = {
             return
         end
 
-        local gui_state = globals.get_player_gui_state(player.index)
-        if not gui_state then
-            game.print("[mission-control] Error: GUI state not found - GUI may not be properly initialized")
-            return
-        end
-
-        local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
+        local combinator_data, entity = get_combinator_data_from_player(player)
         if not combinator_data then
-            game.print("[mission-control] Error: Combinator data not found for entity " .. tostring(gui_state.open_entity))
+            game.print("[mission-control] Error: Combinator data not found or entity is invalid")
             return
         end
-
-        if not combinator_data.entity or not combinator_data.entity.valid then
-            game.print("[mission-control] Error: Combinator entity is invalid")
-            return
-        end
-
-        local entity = combinator_data.entity
 
         -- Create new condition
         local new_condition = {
@@ -161,33 +215,8 @@ local gui_handlers = {
         -- Add to storage
         globals.add_logistics_condition(entity.unit_number, new_condition)
 
-        -- Get conditions table (nested: main_frame -> content_frame -> conditions_frame -> scroll -> table)
-        local main_frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
-        if not main_frame then
-            game.print("[mission-control] Error: Main frame not found")
-            return
-        end
-
-        -- Content frame is children[2] (children[1] is titlebar)
-        local content_frame = main_frame.children[2]
-        if not content_frame then
-            game.print("[mission-control] Error: Content frame not found")
-            return
-        end
-
-        local conditions_frame = content_frame[GUI_NAMES.CONDITIONS_FRAME]
-        if not conditions_frame then
-            game.print("[mission-control] Error: Conditions frame not found")
-            return
-        end
-
-        local scroll = conditions_frame[GUI_NAMES.CONDITIONS_SCROLL]
-        if not scroll then
-            game.print("[mission-control] Error: Scroll pane not found")
-            return
-        end
-
-        local conditions_table = scroll[GUI_NAMES.CONDITIONS_TABLE]
+        -- Get conditions table
+        local conditions_table = get_conditions_table(player)
         if not conditions_table then
             game.print("[mission-control] Error: Conditions table not found")
             return
@@ -213,31 +242,14 @@ local gui_handlers = {
         local condition_index = tonumber(element_name:match("cond_(%d+)_delete"))
         if not condition_index then return end
 
-        local gui_state = globals.get_player_gui_state(player.index)
-        if not gui_state then return end
-
-        local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
-        if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then return end
-
-        local entity = combinator_data.entity
+        local combinator_data, entity = get_combinator_data_from_player(player)
+        if not combinator_data then return end
 
         -- Remove from storage
         globals.remove_logistics_condition(entity.unit_number, condition_index)
 
-        -- Find and clear the conditions table, then rebuild all rows
-        local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
-        if not frame then return end
-
-        local content_frame = frame.children[2]  -- inside_shallow_frame
-        if not content_frame then return end
-
-        local conditions_frame = content_frame[GUI_NAMES.CONDITIONS_FRAME]
-        if not conditions_frame then return end
-
-        local scroll = conditions_frame[GUI_NAMES.CONDITIONS_SCROLL]
-        if not scroll then return end
-
-        local conditions_table = scroll[GUI_NAMES.CONDITIONS_TABLE]
+        -- Get conditions table
+        local conditions_table = get_conditions_table(player)
         if not conditions_table then return end
 
         -- Clear all existing condition rows
@@ -271,16 +283,11 @@ local gui_handlers = {
         local condition_index = tonumber(element_name:match("cond_(%d+)_right_type_toggle"))
         if not condition_index then return end
 
-        local gui_state = globals.get_player_gui_state(player.index)
-        if not gui_state then return end
+        local combinator_data, entity = get_combinator_data_from_player(player)
+        if not combinator_data then return end
 
-        local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
-        if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then return end
-
-        local entity = combinator_data.entity
-        if not combinator_data.conditions or not combinator_data.conditions[condition_index] then return end
-
-        local condition = combinator_data.conditions[condition_index]
+        local condition = get_condition_by_index(combinator_data, condition_index)
+        if not condition then return end
 
         -- Toggle type
         condition.right_type = (condition.right_type == "constant") and "signal" or "constant"
@@ -288,25 +295,8 @@ local gui_handlers = {
         -- Update storage explicitly to ensure persistence
         globals.update_logistics_condition(entity.unit_number, condition_index, condition)
 
-        -- Find GUI elements by traversing the correct hierarchy
-        -- Structure: frame -> children[2] (content) -> conditions_frame -> scroll -> table -> condition_row_X
-        local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
-        if not frame then return end
-
-        local content_frame = frame.children[2]  -- inside_shallow_frame
-        if not content_frame then return end
-
-        local conditions_frame = content_frame[GUI_NAMES.CONDITIONS_FRAME]
-        if not conditions_frame then return end
-
-        local scroll = conditions_frame[GUI_NAMES.CONDITIONS_SCROLL]
-        if not scroll then return end
-
-        local conditions_table = scroll[GUI_NAMES.CONDITIONS_TABLE]
-        if not conditions_table then return end
-
         -- Find the condition row
-        local condition_row = conditions_table["condition_row_" .. condition_index]
+        local condition_row = get_condition_row(player, condition_index)
         if not condition_row then return end
 
         -- Find elements within the row by their names
@@ -346,16 +336,11 @@ local gui_handlers = {
         if not condition_index then return end
         if condition_index == 1 then return end  -- First condition has no AND/OR button
 
-        local gui_state = globals.get_player_gui_state(player.index)
-        if not gui_state then return end
+        local combinator_data, entity = get_combinator_data_from_player(player)
+        if not combinator_data then return end
 
-        local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
-        if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then return end
-
-        local entity = combinator_data.entity
-        if not combinator_data.conditions or not combinator_data.conditions[condition_index] then return end
-
-        local condition = combinator_data.conditions[condition_index]
+        local condition = get_condition_by_index(combinator_data, condition_index)
+        if not condition then return end
 
         -- Toggle operator
         condition.logical_op = (condition.logical_op == "OR") and "AND" or "OR"
@@ -370,19 +355,9 @@ local gui_handlers = {
         e.element.style = is_or and "red_button" or "green_button"
 
         -- Update visual layout of all condition rows
-        local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
-        if frame then
-            local content_frame = frame.children[2]  -- inside_shallow_frame
-            local conditions_frame = content_frame[GUI_NAMES.CONDITIONS_FRAME]
-            if conditions_frame then
-                local scroll = conditions_frame[GUI_NAMES.CONDITIONS_SCROLL]
-                if scroll then
-                    local conditions_table = scroll[GUI_NAMES.CONDITIONS_TABLE]
-                    if conditions_table then
-                        gui_utils.update_condition_row_styles(conditions_table, combinator_data.conditions)
-                    end
-                end
-            end
+        local conditions_table = get_conditions_table(player)
+        if conditions_table then
+            gui_utils.update_condition_row_styles(conditions_table, combinator_data.conditions)
         end
 
         -- Re-evaluate conditions
@@ -394,13 +369,8 @@ local gui_handlers = {
         local player = game.get_player(e.player_index)
         if not player then return end
 
-        local gui_state = globals.get_player_gui_state(player.index)
-        if not gui_state then return end
-
-        local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
-        if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then return end
-
-        local entity = combinator_data.entity
+        local combinator_data, entity = get_combinator_data_from_player(player)
+        if not combinator_data then return end
 
         -- Get GUI elements
         local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
@@ -1153,13 +1123,8 @@ function logistics_combinator_gui.on_gui_click(event)
         local player = game.get_player(event.player_index)
         if not player then return end
 
-        local gui_state = globals.get_player_gui_state(player.index)
-        if not gui_state or not gui_state.open_entity then return end
-
-        local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
-        if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then return end
-
-        local entity = combinator_data.entity
+        local combinator_data, entity = get_combinator_data_from_player(player)
+        if not combinator_data then return end
 
         -- Add new section with default values
         globals.add_logistics_section(entity.unit_number, {
@@ -1190,13 +1155,8 @@ function logistics_combinator_gui.on_gui_click(event)
         local player = game.get_player(event.player_index)
         if not player then return end
 
-        local gui_state = globals.get_player_gui_state(player.index)
-        if not gui_state or not gui_state.open_entity then return end
-
-        local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
-        if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then return end
-
-        local entity = combinator_data.entity
+        local combinator_data, entity = get_combinator_data_from_player(player)
+        if not combinator_data then return end
 
         -- Remove section from storage
         globals.remove_logistics_section(entity.unit_number, section_index)
@@ -1226,25 +1186,17 @@ function logistics_combinator_gui.on_gui_elem_changed(event)
     local player = game.get_player(event.player_index)
     if not player then return end
 
-    local gui_state = globals.get_player_gui_state(player.index)
-    if not gui_state then return end
-
-    local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
-    if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then return end
-
-    local entity = combinator_data.entity
+    local combinator_data, entity = get_combinator_data_from_player(player)
+    if not combinator_data then return end
 
     -- Handle left signal changed
     local left_signal_index = element.name:match("^cond_(%d+)_left_signal$")
     if left_signal_index then
         local condition_index = tonumber(left_signal_index)
-        if combinator_data.conditions and combinator_data.conditions[condition_index] then
-            -- Get the condition, modify it, and update storage explicitly
-            local condition = combinator_data.conditions[condition_index]
+        local condition = get_condition_by_index(combinator_data, condition_index)
+        if condition then
             condition.left_signal = element.elem_value
-            -- Use the globals update function to ensure storage persistence
             globals.update_logistics_condition(entity.unit_number, condition_index, condition)
-            -- Re-evaluate with updated signal
             evaluate_and_update_indicator(player, entity)
         end
         return
@@ -1254,13 +1206,10 @@ function logistics_combinator_gui.on_gui_elem_changed(event)
     local right_signal_index = element.name:match("^cond_(%d+)_right_signal$")
     if right_signal_index then
         local condition_index = tonumber(right_signal_index)
-        if combinator_data.conditions and combinator_data.conditions[condition_index] then
-            -- Get the condition, modify it, and update storage explicitly
-            local condition = combinator_data.conditions[condition_index]
+        local condition = get_condition_by_index(combinator_data, condition_index)
+        if condition then
             condition.right_signal = element.elem_value
-            -- Use the globals update function to ensure storage persistence
             globals.update_logistics_condition(entity.unit_number, condition_index, condition)
-            -- Re-evaluate with updated signal
             evaluate_and_update_indicator(player, entity)
         end
         return
@@ -1276,25 +1225,17 @@ function logistics_combinator_gui.on_gui_text_changed(event)
     local player = game.get_player(event.player_index)
     if not player then return end
 
-    local gui_state = globals.get_player_gui_state(player.index)
-    if not gui_state then return end
-
-    local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
-    if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then return end
-
-    local entity = combinator_data.entity
+    local combinator_data, entity = get_combinator_data_from_player(player)
+    if not combinator_data then return end
 
     -- Handle right value changed
     local value_index = element.name:match("^cond_(%d+)_right_value$")
     if value_index then
         local condition_index = tonumber(value_index)
-        if combinator_data.conditions and combinator_data.conditions[condition_index] then
-            -- Get the condition, modify it, and update storage explicitly
-            local condition = combinator_data.conditions[condition_index]
+        local condition = get_condition_by_index(combinator_data, condition_index)
+        if condition then
             condition.right_value = tonumber(element.text) or 0
-            -- Use the globals update function to ensure storage persistence
             globals.update_logistics_condition(entity.unit_number, condition_index, condition)
-            -- Re-evaluate with updated value
             evaluate_and_update_indicator(player, entity)
         end
         return
@@ -1327,25 +1268,17 @@ function logistics_combinator_gui.on_gui_selection_state_changed(event)
     local player = game.get_player(event.player_index)
     if not player then return end
 
-    local gui_state = globals.get_player_gui_state(player.index)
-    if not gui_state then return end
-
-    local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
-    if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then return end
-
-    local entity = combinator_data.entity
+    local combinator_data, entity = get_combinator_data_from_player(player)
+    if not combinator_data then return end
 
     -- Handle operator changed
     local operator_index = element.name:match("^cond_(%d+)_operator$")
     if operator_index then
         local condition_index = tonumber(operator_index)
-        if combinator_data.conditions and combinator_data.conditions[condition_index] then
-            -- Get the condition, modify it, and update storage explicitly
-            local condition = combinator_data.conditions[condition_index]
+        local condition = get_condition_by_index(combinator_data, condition_index)
+        if condition then
             condition.operator = gui_utils.get_operator_from_index(element.selected_index)
-            -- Use the globals update function to ensure storage persistence
             globals.update_logistics_condition(entity.unit_number, condition_index, condition)
-            -- Re-evaluate with updated operator
             evaluate_and_update_indicator(player, entity)
         end
         return
@@ -1377,13 +1310,8 @@ function logistics_combinator_gui.on_gui_checked_state_changed(event)
     local player = game.get_player(event.player_index)
     if not player then return end
 
-    local gui_state = globals.get_player_gui_state(player.index)
-    if not gui_state then return end
-
-    local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
-    if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then return end
-
-    local entity = combinator_data.entity
+    local combinator_data, entity = get_combinator_data_from_player(player)
+    if not combinator_data then return end
 
     -- Handle action radio buttons (ensure only one is selected)
     if element.name == GUI_NAMES.ACTION_RADIO_INJECT then
@@ -1410,30 +1338,19 @@ function logistics_combinator_gui.on_gui_checked_state_changed(event)
     local left_wire_index = element.name:match("^cond_(%d+)_left_wire_(red)$") or element.name:match("^cond_(%d+)_left_wire_(green)$")
     if left_wire_index then
         local condition_index = tonumber(left_wire_index)
-        if combinator_data.conditions and combinator_data.conditions[condition_index] then
-            -- Find checkboxes by traversing the GUI hierarchy
-            local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
-            if frame then
-                local content_frame = frame.children[2]
-                local conditions_frame = content_frame and content_frame[GUI_NAMES.CONDITIONS_FRAME]
-                local scroll = conditions_frame and conditions_frame[GUI_NAMES.CONDITIONS_SCROLL]
-                local conditions_table = scroll and scroll[GUI_NAMES.CONDITIONS_TABLE]
-                local condition_row = conditions_table and conditions_table["condition_row_" .. condition_index]
-                if condition_row then
-                    -- Find checkboxes by recursively searching nested GUI structure
-                    -- The checkboxes are inside filter_flow -> checkbox_panel (unnamed flows)
-                    local red_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_left_wire_red")
-                    local green_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_left_wire_green")
+        local condition = get_condition_by_index(combinator_data, condition_index)
+        if condition then
+            local condition_row = get_condition_row(player, condition_index)
+            if condition_row then
+                -- Find checkboxes by recursively searching nested GUI structure
+                local red_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_left_wire_red")
+                local green_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_left_wire_green")
 
-                    if red_checkbox and green_checkbox then
-                        game.print("[mission-control] Debug: Left wire filter changed for condition " .. condition_index)
-                        -- Get the condition, modify it, and update storage explicitly
-                        local condition = combinator_data.conditions[condition_index]
-                        condition.left_wire_filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
-                        -- Use the globals update function to ensure storage persistence
-                        globals.update_logistics_condition(entity.unit_number, condition_index, condition)
-                        evaluate_and_update_indicator(player, entity)
-                    end
+                if red_checkbox and green_checkbox then
+                    game.print("[mission-control] Debug: Left wire filter changed for condition " .. condition_index)
+                    condition.left_wire_filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
+                    globals.update_logistics_condition(entity.unit_number, condition_index, condition)
+                    evaluate_and_update_indicator(player, entity)
                 end
             end
         end
@@ -1444,28 +1361,17 @@ function logistics_combinator_gui.on_gui_checked_state_changed(event)
     local right_wire_index = element.name:match("^cond_(%d+)_right_wire_(red)$") or element.name:match("^cond_(%d+)_right_wire_(green)$")
     if right_wire_index then
         local condition_index = tonumber(right_wire_index)
-        if combinator_data.conditions and combinator_data.conditions[condition_index] then
-            -- Find checkboxes by traversing the GUI hierarchy
-            local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
-            if frame then
-                local content_frame = frame.children[2]
-                local conditions_frame = content_frame and content_frame[GUI_NAMES.CONDITIONS_FRAME]
-                local scroll = conditions_frame and conditions_frame[GUI_NAMES.CONDITIONS_SCROLL]
-                local conditions_table = scroll and scroll[GUI_NAMES.CONDITIONS_TABLE]
-                local condition_row = conditions_table and conditions_table["condition_row_" .. condition_index]
+        local condition = get_condition_by_index(combinator_data, condition_index)
+        if condition then
+            local condition_row = get_condition_row(player, condition_index)
+            if condition_row then
+                local red_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_right_wire_red")
+                local green_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_right_wire_green")
 
-                if condition_row then
-                    local red_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_right_wire_red")
-                    local green_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_right_wire_green")
-
-                    if red_checkbox and green_checkbox then
-                        -- Get the condition, modify it, and update storage explicitly
-                        local condition = combinator_data.conditions[condition_index]
-                        condition.right_wire_filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
-                        -- Use the globals update function to ensure storage persistence
-                        globals.update_logistics_condition(entity.unit_number, condition_index, condition)
-                        evaluate_and_update_indicator(player, entity)
-                    end
+                if red_checkbox and green_checkbox then
+                    condition.right_wire_filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
+                    globals.update_logistics_condition(entity.unit_number, condition_index, condition)
+                    evaluate_and_update_indicator(player, entity)
                 end
             end
         end

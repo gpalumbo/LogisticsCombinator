@@ -47,6 +47,30 @@ function find_child_recursive(element, name)
     return nil
 end
 
+--- Compare two values with an operator
+-- Helper function for condition evaluation
+-- @param left number: Left-hand value
+-- @param right number: Right-hand value
+-- @param operator string: Comparison operator
+-- @return boolean: Result of comparison
+function compare_values(left, right, operator)
+  if operator == "<" then
+    return left < right
+  elseif operator == ">" then
+    return left > right
+  elseif operator == "=" then
+    return left == right
+  elseif operator == "≠" then
+    return left ~= right
+  elseif operator == "≤" then
+    return left <= right
+  elseif operator == "≥" then
+    return left >= right
+  else
+    return false  -- Unknown operator
+  end
+end
+
 -- ==============================================================================
 -- GUI COMPONENT CREATION
 -- ==============================================================================
@@ -552,23 +576,7 @@ function evaluate_condition(signals, condition)
 
   -- Perform comparison based on operator
   local operator = condition.operator
-
-  if operator == "<" then
-    return left_value < right_value
-  elseif operator == ">" then
-    return left_value > right_value
-  elseif operator == "=" then
-    return left_value == right_value
-  elseif operator == "≠" then
-    return left_value ~= right_value
-  elseif operator == "≤" then
-    return left_value <= right_value
-  elseif operator == "≥" then
-    return left_value >= right_value
-  else
-    -- Unknown operator, default to false
-    return false
-  end
+  return compare_values(left_value, right_value, operator)
 end
 
 --- Evaluate complex conditions with boolean operators and proper precedence
@@ -781,30 +789,6 @@ function get_filtered_signals_from_tables(red_signals, green_signals, wire_filte
   end
 
   return result
-end
-
---- Compare two values with an operator
--- Helper function for condition evaluation
--- @param left number: Left-hand value
--- @param right number: Right-hand value
--- @param operator string: Comparison operator
--- @return boolean: Result of comparison
-function compare_values(left, right, operator)
-  if operator == "<" then
-    return left < right
-  elseif operator == ">" then
-    return left > right
-  elseif operator == "=" then
-    return left == right
-  elseif operator == "≠" then
-    return left ~= right
-  elseif operator == "≤" then
-    return left <= right
-  elseif operator == "≥" then
-    return left >= right
-  else
-    return false  -- Unknown operator
-  end
 end
 
 --- Update visual layout of condition rows based on AND/OR mix
