@@ -5,6 +5,7 @@ local flib_gui = require("__flib__.gui")
 local gui_utils = require("lib.gui_utils")
 local globals = require("scripts.globals")
 local circuit_utils = require("lib.circuit_utils")
+local logistics_combinator = require("scripts.logistics_combinator.logistics_combinator")
 
 local logistics_combinator_gui = {}
 
@@ -190,13 +191,11 @@ local gui_handlers = {
     add_condition_button = function(e)
         local player = game.get_player(e.player_index)
         if not player then
-            game.print("[mission-control] Error: Player not found")
             return
         end
 
         local combinator_data, entity = get_combinator_data_from_player(player)
         if not combinator_data then
-            game.print("[mission-control] Error: Combinator data not found or entity is invalid")
             return
         end
 
@@ -218,15 +217,12 @@ local gui_handlers = {
         -- Get conditions table
         local conditions_table = get_conditions_table(player)
         if not conditions_table then
-            game.print("[mission-control] Error: Conditions table not found")
             return
         end
 
         local condition_count = #combinator_data.conditions
-        game.print("[mission-control] Debug: Adding condition #" .. condition_count .. " to table")
         local is_first = (condition_count == 1)
         gui_utils.create_condition_row(conditions_table, condition_count, new_condition, is_first)
-        game.print("[mission-control] Debug: Condition row created successfully")
 
         -- Re-evaluate
         evaluate_and_update_indicator(player, entity)
@@ -313,7 +309,6 @@ local gui_handlers = {
             right_signal.visible = (condition.right_type == "signal")
         end
         if right_wire_flow then
-            game.print("[mission-control] Debug: Toggling right wire filter visibility for condition " .. condition_index)
             right_wire_flow.visible = (condition.right_type == "signal")
         end
 
@@ -352,7 +347,7 @@ local gui_handlers = {
         -- Update button appearance
         e.element.caption = condition.logical_op
         e.element.tooltip = is_or and {"gui.switch-to-and"} or {"gui.switch-to-or"}
-        e.element.style = is_or and "red_button" or "green_button"
+        e.element.style = "button"
 
         -- Update visual layout of all condition rows
         local conditions_table = get_conditions_table(player)
@@ -505,12 +500,10 @@ local function create_signal_sub_grid(parent, entity, signals)
     for _, sig_data in ipairs(signals) do
         -- Validate signal_id structure
         if not sig_data or not sig_data.signal_id then
-            game.print("[mission-control] Warning: Invalid signal data (no signal_id)")
             goto continue
         end
 
         if not sig_data.signal_id.name then
-            game.print("[mission-control] Warning: Invalid signal_id structure: " .. serpent.line(sig_data.signal_id))
             goto continue
         end     
         local signal_type = sig_data.signal_id.type or "item"
@@ -577,6 +570,8 @@ local function create_signal_grid(parent, entity, signal_grid_frame)
         direction = "vertical",
         style = "inside_shallow_frame"
     }
+    grid_frame.style.padding = 8
+    grid_frame.style.horizontally_stretchable = true
 
     grid_frame.add{
         type = "label",
@@ -603,6 +598,7 @@ local function create_conditions_panel(parent, entity)
         style = "inside_deep_frame"
     }
     frame.style.padding = 8
+    frame.style.horizontally_stretchable = true
 
     -- Header with label
     local header_flow = frame.add{
@@ -627,7 +623,8 @@ local function create_conditions_panel(parent, entity)
         style = "flib_naked_scroll_pane",
         style_mods = {
             maximal_height = 300,
-            minimal_height = 100
+            minimal_height = 100,
+            horizontally_stretchable = true
         }
     }
 
@@ -637,7 +634,8 @@ local function create_conditions_panel(parent, entity)
         name = GUI_NAMES.CONDITIONS_TABLE,
         column_count = 1,  -- One row per condition
         style_mods = {
-            vertical_spacing = 2
+            vertical_spacing = 2,
+            horizontally_stretchable = true
         }
     }
 
@@ -990,6 +988,9 @@ function logistics_combinator_gui.create_gui(player, entity)
     -- Center the window
     refs[GUI_NAMES.MAIN_FRAME].auto_center = true
 
+    -- Make the GUI respond to ESC key by setting it as the player's opened GUI
+    player.opened = refs[GUI_NAMES.MAIN_FRAME]
+
     -- Store entity reference in player's GUI state
     globals.set_player_gui_entity(player.index, entity, "logistics_combinator")
 
@@ -1044,12 +1045,37 @@ end
 --- Close the logistics combinator GUI
 --- @param player LuaPlayer
 function logistics_combinator_gui.close_gui(player)
+    -- Get the entity before clearing the reference
+    local gui_state = globals.get_player_gui_state(player.index)
+    local entity = nil
+
+    if gui_state and gui_state.open_entity then
+        local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
+        if combinator_data and combinator_data.entity and combinator_data.entity.valid then
+            entity = combinator_data.entity
+        end
+    end
+
     local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
     if frame then
         frame.destroy()
     end
+
     -- Clear stored entity reference
     globals.clear_player_gui_entity(player.index)
+
+    -- If we had an entity, update its state immediately
+    if entity and entity.valid then
+        local unit_number = entity.unit_number
+        if unit_number then
+            -- Update connected entities in case wires changed while GUI was open
+            logistics_combinator.update_connected_entities(unit_number)
+
+            -- Immediately process rules to apply any GUI changes
+            -- Pass force_update=true to update multipliers even if condition state hasn't changed
+            logistics_combinator.process_rules(unit_number, true)
+        end
+    end
 end
 
 --- Handle GUI opened event
@@ -1061,7 +1087,6 @@ function logistics_combinator_gui.on_gui_opened(event)
 
         -- Ensure entity is registered (in case this is from a loaded save or the entity wasn't registered)
         if not globals.get_logistics_combinator_data(entity.unit_number) then
-            game.print("[mission-control] Debug: Registering combinator " .. entity.unit_number .. " (was not found in storage)")
             globals.register_logistics_combinator(entity)
         end
 
@@ -1347,7 +1372,6 @@ function logistics_combinator_gui.on_gui_checked_state_changed(event)
                 local green_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_left_wire_green")
 
                 if red_checkbox and green_checkbox then
-                    game.print("[mission-control] Debug: Left wire filter changed for condition " .. condition_index)
                     condition.left_wire_filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
                     globals.update_logistics_condition(entity.unit_number, condition_index, condition)
                     evaluate_and_update_indicator(player, entity)

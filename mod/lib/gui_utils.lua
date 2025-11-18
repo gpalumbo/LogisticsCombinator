@@ -624,14 +624,6 @@ function evaluate_complex_conditions(conditions, red_signals, green_signals)
   -- Step 1: Evaluate all individual conditions and store results with their operators
   local evaluated_conditions = {}
   for i, cond in ipairs(conditions) do
-    -- Debug: Log wire filter values
-    if game then
-      game.print(string.format("[DEBUG] Condition %d: left_wire_filter=%s, right_wire_filter=%s",
-        i,
-        tostring(cond.left_wire_filter or "nil"),
-        tostring(cond.right_wire_filter or "nil")))
-    end
-
     -- Get signals for left side based on wire filter
     local left_signals = get_filtered_signals_from_tables(red_signals, green_signals, cond.left_wire_filter)
 
@@ -639,41 +631,18 @@ function evaluate_complex_conditions(conditions, red_signals, green_signals)
     local left_key = get_signal_key(cond.left_signal)
     local left_value = left_signals[left_key] or 0
 
-    -- Debug: Log signal values
-    if game and left_key ~= "" then
-      game.print(string.format("[DEBUG]   Left signal %s = %d (from wire_filter=%s)",
-        left_key, left_value, tostring(cond.left_wire_filter or "nil")))
-    end
-
     -- Get right signal value
     local right_value
     if cond.right_type == "signal" then
       local right_signals = get_filtered_signals_from_tables(red_signals, green_signals, cond.right_wire_filter)
       local right_key = get_signal_key(cond.right_signal)
       right_value = right_signals[right_key] or 0
-
-      -- Debug: Log right signal values
-      if game and right_key ~= "" then
-        game.print(string.format("[DEBUG]   Right signal %s = %d (from wire_filter=%s)",
-          right_key, right_value, tostring(cond.right_wire_filter or "nil")))
-      end
     else
       right_value = cond.right_value or 0
-
-      -- Debug: Log right constant value
-      if game then
-        game.print(string.format("[DEBUG]   Right constant = %d", right_value))
-      end
     end
 
     -- Evaluate this condition
     local cond_result = compare_values(left_value, right_value, cond.operator)
-
-    -- Debug: Log evaluation result
-    if game then
-      game.print(string.format("[DEBUG]   Evaluation: %d %s %d = %s",
-        left_value, cond.operator or "?", right_value, tostring(cond_result)))
-    end
 
     table.insert(evaluated_conditions, {
       result = cond_result,

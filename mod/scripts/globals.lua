@@ -113,7 +113,6 @@ end
 --- @return table|nil Combinator data or nil if not found
 function globals_module.get_logistics_combinator_data(unit_number)
     if not storage.logistics_combinators then
-        game.print("[mission-control] ERR: combinator data missing for " .. unit_number .. " (was not found in storage)")
         return nil
     end
 
@@ -308,7 +307,6 @@ end
 --- @param condition_index number Index of the condition to update
 --- @param condition table The new condition data
 function globals_module.update_logistics_condition(unit_number, condition_index, condition)
-    game.print("[mission-control] DEBUG: updating condition for " .. unit_number .. " at index " .. condition_index)
     if not storage.logistics_combinators then
         return
     end
@@ -317,7 +315,6 @@ function globals_module.update_logistics_condition(unit_number, condition_index,
     if data and data.conditions then
         data.conditions[condition_index] = condition
         storage.logistics_combinators[unit_number] = data
-        game.print("[mission-control] DEBUG: condition updated successfully")
     end
 end
 
