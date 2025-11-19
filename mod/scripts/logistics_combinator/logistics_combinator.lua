@@ -320,7 +320,18 @@ end
 
 --- Cleanup all groups injected by a combinator
 --- @param unit_number number The combinator's unit number
+---
+--- PERFORMANCE NOTE:
+---   Uses cached connected_entities instead of searching all surfaces.
+---   Limitation: If an entity was disconnected before combinator removal,
+---   its injected sections will remain. This is an acceptable trade-off
+---   to avoid catastrophic performance issues with large bases.
 function logistics_combinator.cleanup_injected_groups(unit_number)
+    local combinator_data = globals.get_logistics_combinator_data(unit_number)
+    if not combinator_data then
+        return  -- Combinator already unregistered
+    end
+
     local tracking = globals.get_injected_tracking(unit_number)
     if not tracking or not next(tracking) then
         return  -- Nothing to clean up
@@ -328,45 +339,37 @@ function logistics_combinator.cleanup_injected_groups(unit_number)
 
     local cleanup_count = 0
 
-    -- For each entity, clean up all injected sections
-    for entity_unit_number, entity_tracking in pairs(tracking) do
-        -- Find the entity (search all surfaces)
-        local entity = nil
-        for _, surface in pairs(game.surfaces) do
-            local candidates = surface.find_entities_filtered{
-                force = game.forces.player,
-                limit = 10000
-            }
-            for _, e in ipairs(candidates) do
-                if e.valid and e.unit_number == entity_unit_number then
-                    entity = e
-                    break
-                end
-            end
-            if entity then break end
-        end
+    -- Use cached connected_entities instead of searching all surfaces
+    -- This is MUCH faster (O(n) vs O(surfaces * entities))
+    local connected_entities = combinator_data.connected_entities or {}
 
+    for _, entity in ipairs(connected_entities) do
         if entity and entity.valid then
-            local requester_point = entity.get_requester_point()
-            if requester_point and entity_tracking.sections then
-                local sections = requester_point.sections
+            local entity_unit_number = entity.unit_number
+            local entity_tracking = tracking[entity_unit_number]
 
-                -- For each tracked {group, multiplier} tuple, find and remove the LAST matching section
-                for _, tracked_section in ipairs(entity_tracking.sections) do
-                    -- Find LAST matching section
-                    local section_to_remove = nil
-                    for i = #sections, 1, -1 do
-                        local section = sections[i]
-                        if section and section.group == tracked_section.group and
-                           section.multiplier == tracked_section.multiplier then
-                            section_to_remove = i
-                            break
+            if entity_tracking and entity_tracking.sections then
+                local requester_point = entity.get_requester_point()
+                if requester_point then
+                    local sections = requester_point.sections
+
+                    -- For each tracked {group, multiplier} tuple, find and remove the LAST matching section
+                    for _, tracked_section in ipairs(entity_tracking.sections) do
+                        -- Find LAST matching section
+                        local section_to_remove = nil
+                        for i = #sections, 1, -1 do
+                            local section = sections[i]
+                            if section and section.group == tracked_section.group and
+                               section.multiplier == tracked_section.multiplier then
+                                section_to_remove = i
+                                break
+                            end
                         end
-                    end
 
-                    if section_to_remove then
-                        requester_point.remove_section(section_to_remove)
-                        cleanup_count = cleanup_count + 1
+                        if section_to_remove then
+                            requester_point.remove_section(section_to_remove)
+                            cleanup_count = cleanup_count + 1
+                        end
                     end
                 end
             end
