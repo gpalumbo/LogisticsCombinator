@@ -1186,6 +1186,10 @@ function logistics_combinator_gui.on_gui_click(event)
         -- Remove section from storage
         globals.remove_logistics_section(entity.unit_number, section_index)
 
+        -- Trigger reconciliation to remove any injected sections for the deleted section
+        local condition_result = globals.get_condition_result(entity.unit_number)
+        logistics_combinator.reconcile_sections(entity.unit_number, condition_result)
+
         -- Refresh the actions section to update indices
         local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
         if not frame then return end
@@ -1279,6 +1283,10 @@ function logistics_combinator_gui.on_gui_text_changed(event)
                 if multiplier < 0 then multiplier = 0 end
                 section.multiplier = multiplier
                 globals.update_logistics_section(entity.unit_number, section_index, section)
+
+                -- Trigger reconciliation to update injected sections
+                local condition_result = globals.get_condition_result(entity.unit_number)
+                logistics_combinator.reconcile_sections(entity.unit_number, condition_result)
             end
         end
         return
@@ -1321,6 +1329,10 @@ function logistics_combinator_gui.on_gui_selection_state_changed(event)
                 local section = sections[section_index]
                 section.group = (selected_item == "<none>") and nil or selected_item
                 globals.update_logistics_section(entity.unit_number, section_index, section)
+
+                -- Trigger reconciliation to update injected sections
+                local condition_result = globals.get_condition_result(entity.unit_number)
+                logistics_combinator.reconcile_sections(entity.unit_number, condition_result)
             end
         end
         return

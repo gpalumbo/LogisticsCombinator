@@ -60,7 +60,9 @@ function globals_module.init_globals()
         connected_entities = {}, -- cached unit_numbers
         injected_tracking = {  -- Track what we injected per entity
             [entity_unit_number] = {
-                section_indices = {}  -- Array of section indices we added
+                sections = {  -- Array of {group="name", multiplier=1.0} tuples we injected
+                    {group = "group-name", multiplier = 1.0}
+                }
             }
         }
     }
@@ -181,11 +183,12 @@ function globals_module.get_logistics_sections(unit_number)
     return {}
 end
 
---- Track an injected section index
+--- Track an injected section by {group, multiplier} tuple
 --- @param combinator_unit_number number The combinator that injected
 --- @param entity_unit_number number The entity that received
---- @param section_index number The section index that was injected
-function globals_module.track_injected_section(combinator_unit_number, entity_unit_number, section_index)
+--- @param group_name string The group name that was injected
+--- @param multiplier number The multiplier value
+function globals_module.track_injected_section(combinator_unit_number, entity_unit_number, group_name, multiplier)
     if not storage.logistics_combinators then
         return
     end
@@ -196,9 +199,38 @@ function globals_module.track_injected_section(combinator_unit_number, entity_un
             data.injected_tracking = {}
         end
         if not data.injected_tracking[entity_unit_number] then
-            data.injected_tracking[entity_unit_number] = {section_indices = {}}
+            data.injected_tracking[entity_unit_number] = {sections = {}}
         end
-        table.insert(data.injected_tracking[entity_unit_number].section_indices, section_index)
+
+        -- Get reference to entity tracking
+        local entity_tracking = data.injected_tracking[entity_unit_number]
+
+        -- Migrate old format (section_indices) to new format (sections) if needed
+        if entity_tracking.section_indices and not entity_tracking.sections then
+            entity_tracking.sections = {}
+            entity_tracking.section_indices = nil
+        end
+
+        -- Ensure sections table exists (defensive)
+        if not entity_tracking.sections then
+            entity_tracking.sections = {}
+        end
+
+        -- Check if we already track this tuple (avoid duplicates)
+        local already_tracked = false
+        for _, tracked_section in ipairs(entity_tracking.sections) do
+            if tracked_section.group == group_name and tracked_section.multiplier == multiplier then
+                already_tracked = true
+                break
+            end
+        end
+
+        if not already_tracked then
+            table.insert(entity_tracking.sections, {
+                group = group_name,
+                multiplier = multiplier
+            })
+        end
     end
 end
 
@@ -212,6 +244,41 @@ function globals_module.clear_injected_tracking(combinator_unit_number)
     local data = storage.logistics_combinators[combinator_unit_number]
     if data then
         data.injected_tracking = {}
+    end
+end
+
+--- Remove a tracked section tuple for a specific entity
+--- @param combinator_unit_number number The combinator
+--- @param entity_unit_number number The entity
+--- @param group_name string The group name
+--- @param multiplier number The multiplier
+function globals_module.remove_tracked_section(combinator_unit_number, entity_unit_number, group_name, multiplier)
+    if not storage.logistics_combinators then
+        return
+    end
+
+    local data = storage.logistics_combinators[combinator_unit_number]
+    if not data or not data.injected_tracking then
+        return
+    end
+
+    local entity_tracking = data.injected_tracking[entity_unit_number]
+    if not entity_tracking or not entity_tracking.sections then
+        return
+    end
+
+    -- Find and remove the matching tuple
+    for i = #entity_tracking.sections, 1, -1 do
+        local section = entity_tracking.sections[i]
+        if section.group == group_name and section.multiplier == multiplier then
+            table.remove(entity_tracking.sections, i)
+            break  -- Only remove first match (working backwards, so it's the last match)
+        end
+    end
+
+    -- Clean up empty entity tracking
+    if #entity_tracking.sections == 0 then
+        data.injected_tracking[entity_unit_number] = nil
     end
 end
 
