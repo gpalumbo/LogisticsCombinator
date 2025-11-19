@@ -37,7 +37,7 @@ FACTORIO_MODS_DIR ?= $(HOME)/.factorio/mods
 .PHONY: all help clean package localdeploy install uninstall check lint lint-strict lint-install check-luacheck ci
 
 # Default target
-all: package
+all: help
 
 # Help target
 help:
@@ -96,7 +96,7 @@ package: check clean
 	@find $(DIST_DIR)/$(MOD_FULL_NAME) -name "*~" -type f -delete 2>/dev/null || true
 
 	@echo "Creating ZIP archive..."
-	@cd $(DIST_DIR) && zip -r $(MOD_FULL_NAME).zip $(MOD_FULL_NAME) -q
+	@cd $(DIST_DIR) && 7z a -r $(MOD_FULL_NAME).zip $(MOD_FULL_NAME) 
 	@rm -rf $(DIST_DIR)/$(MOD_FULL_NAME)
 
 	@echo ""

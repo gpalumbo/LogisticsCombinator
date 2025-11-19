@@ -313,6 +313,61 @@ function signal_utils.count_signals(signals)
   return count
 end
 
+--[[
+  Convert signal_id to prototype object and quality for LuaPlayer.pipette()
+
+  Gets the actual prototype object from game.item_prototypes/fluid_prototypes/entity_prototypes
+  for use with the pipette API.
+
+  @param signal_id table: Signal identifier {type, name, quality?}
+  @return LuaPrototype|nil, string|nil: Prototype object and quality name, or nil if not pipettable
+
+  BEHAVIOR:
+  - Returns actual prototype object from game.*_prototypes tables
+  - Defaults to "item" if type is nil
+  - Returns nil for virtual signals (not pipettable)
+  - Returns quality as second return value
+
+  TYPE MAPPING:
+  - "item" → game.item_prototypes[name]
+  - "fluid" → game.fluid_prototypes[name]
+  - "entity" → game.entity_prototypes[name]
+  - "virtual-signal" → nil (not pipettable)
+  - nil → defaults to game.item_prototypes[name]
+
+  EXAMPLE:
+    signal_id = {type = "item", name = "iron-plate", quality = "uncommon"}
+    prototype, quality = signal_to_pipette_prototype(signal_id)
+    -- Returns: LuaItemPrototype["iron-plate"], "uncommon"
+
+    virtual_signal = {type = "virtual-signal", name = "signal-A"}
+    prototype, quality = signal_to_pipette_prototype(virtual_signal)
+    -- Returns: nil, nil (virtual signals can't be pipetted)
+--]]
+function signal_utils.signal_to_pipette_prototype(signal_id)
+  if not signal_id or not signal_id.name then
+    return nil
+  end
+
+  -- Default to "item" if type is nil
+  local signal_type = signal_id.type or "item"
+
+  -- Virtual signals cannot be pipetted
+  if signal_type == "virtual-signal" or signal_type == "virtual" then
+    return nil
+  end
+
+  -- Get the actual prototype object from the game
+  if(not prototypes[signal_type]) then
+    return nil
+  end
+
+  local prototype = prototypes[signal_type][signal_id.name]
+
+  -- Return prototype and quality (quality can be nil)
+  return prototype
+end
+
 --------------------------------------------------------------------------------
 -- INLINE TESTS (for development validation)
 --------------------------------------------------------------------------------

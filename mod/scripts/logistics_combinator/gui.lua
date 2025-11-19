@@ -478,23 +478,20 @@ local function create_signal_sub_grid(parent, entity, signals)
     -- Create scroll pane for signals
     local scroll = parent.add{
         type = "scroll-pane",
-        style = "flib_naked_scroll_pane_no_padding",
-        style_mods = {
-            maximal_height = 200,
-            minimal_width = 300
-        }
+        style = "flib_naked_scroll_pane_no_padding"
     }
+    scroll.style.maximal_height = 200
+    scroll.style.minimal_width = 300
 
     -- Create table grid with 10 columns
     local signal_table = scroll.add{
         type = "table",
         name = GUI_NAMES.SIGNAL_GRID_TABLE,
-        column_count = 10,
-        style_mods = {
-            horizontal_spacing = 1,
-            vertical_spacing = 1
-        }
+        column_count = 10
     }
+    signal_table.style.horizontal_spacing = 0
+    signal_table.style.vertical_spacing = 0
+    signal_table.style.cell_padding = 0
 
     -- Add signal buttons
     for _, sig_data in ipairs(signals) do
@@ -510,47 +507,35 @@ local function create_signal_sub_grid(parent, entity, signals)
         local sprite_path = signal_type .. "/" .. sig_data.signal_id.name
 
         -- Determine color indicator sprite based on wire color
-        local color_sprite
+        local slot_style
         if sig_data.wire_color == "red" then
-            color_sprite = "mission-control-wire-indicator-red"
+            slot_style = "red_slot"
         elseif sig_data.wire_color == "green" then
-            color_sprite = "mission-control-wire-indicator-green"
+            slot_style = "green_slot"
         else
-            color_sprite = "mission-control-wire-indicator-both"
+            slot_style = "slot_button"
         end
 
-        -- Add colored indicator overlay sprite behind button
-
-        local item_slot = signal_table.add{
+        -- Add colored indicator sprite button
+        local item_slot = signal_table.add({
             type = "sprite-button",
             sprite = sprite_path,
             number = sig_data.count,
-            tooltip = {"", "[font=default-semibold]", sig_data.signal_id.name, "[/font]\n",
-                      "Count: ", sig_data.count, "\n",
-                      "Wire: ", sig_data.wire_color},
-            style = "slot_button",
-            mouse_button_filter = {"left"}
-        }
-        item_slot.add{
-            type = "sprite",
-            sprite = color_sprite,
-            style_mods = {
-                stretch_image_to_widget_size = true
-            }
-        }
+            style = slot_style,
+            quality = sig_data.signal_id.quality,
+            tags = { signal_sel= sig_data.signal_id }
+        })
 
         ::continue::
     end
 
     -- If no signals, show message
     if #signals == 0 then
-        scroll.add{
+        local no_signal_label = scroll.add{
             type = "label",
-            caption = {"", "No input signals"},
-            style_mods = {
-                font_color = {r = 0.6, g = 0.6, b = 0.6}
-            }
+            caption = {"", "No input signals"}
         }
+        no_signal_label.style.font_color = {r = 0.6, g = 0.6, b = 0.6}
     end
     return scroll
 end
@@ -573,13 +558,11 @@ local function create_signal_grid(parent, entity, signal_grid_frame)
     grid_frame.style.padding = 8
     grid_frame.style.horizontally_stretchable = true
 
-    grid_frame.add{
+    local signal_header = grid_frame.add{
         type = "label",
-        caption = {"", "[font=default-semibold]Input Signals[/font]"},
-        style_mods = {
-            bottom_margin = 4
-        }
+        caption = {"", "[font=default-semibold]Input Signals[/font]"}
     }
+    signal_header.style.bottom_margin = 4
     local signals = circuit_utils.get_input_signals(entity)
     create_signal_sub_grid(grid_frame, entity,signals.red)
     create_signal_sub_grid(grid_frame, entity,signals.green)
@@ -603,12 +586,10 @@ local function create_conditions_panel(parent, entity)
     -- Header with label
     local header_flow = frame.add{
         type = "flow",
-        direction = "horizontal",
-        style_mods = {
-            vertical_align = "center",
-            bottom_margin = 4
-        }
+        direction = "horizontal"
     }
+    header_flow.style.vertical_align = "center"
+    header_flow.style.bottom_margin = 4
 
     header_flow.add{
         type = "label",
@@ -620,24 +601,20 @@ local function create_conditions_panel(parent, entity)
         type = "scroll-pane",
         name = GUI_NAMES.CONDITIONS_SCROLL,
         direction = "vertical",
-        style = "flib_naked_scroll_pane",
-        style_mods = {
-            maximal_height = 300,
-            minimal_height = 100,
-            horizontally_stretchable = true
-        }
+        style = "flib_naked_scroll_pane"
     }
+    scroll.style.maximal_height = 300
+    scroll.style.minimal_height = 100
+    scroll.style.horizontally_stretchable = true
 
     -- Table to hold condition rows
     local conditions_table = scroll.add{
         type = "table",
         name = GUI_NAMES.CONDITIONS_TABLE,
-        column_count = 1,  -- One row per condition
-        style_mods = {
-            vertical_spacing = 2,
-            horizontally_stretchable = true
-        }
+        column_count = 1  -- One row per condition
     }
+    conditions_table.style.vertical_spacing = 2
+    conditions_table.style.horizontally_stretchable = true
 
     -- Load existing conditions from storage
     local combinator_data = globals.get_logistics_combinator_data(entity.unit_number)
@@ -649,17 +626,15 @@ local function create_conditions_panel(parent, entity)
     end
 
     -- Add condition button
-    frame.add{
+    local add_button = frame.add{
         type = "button",
         name = GUI_NAMES.ADD_CONDITION_BUTTON,
         caption = "+ Add condition",
         style = "green_button",
-        tooltip = {"gui.add-condition-tooltip"},
-        style_mods = {
-            top_margin = 8,
-            horizontally_stretchable = true
-        }
+        tooltip = {"gui.add-condition-tooltip"}
     }
+    add_button.style.top_margin = 8
+    add_button.style.horizontally_stretchable = true
 
     return frame
 end
@@ -682,13 +657,11 @@ local function create_logistics_section_row(parent, section_index, section_data,
     local row = parent.add{
         type = "flow",
         name = GUI_NAMES.SECTION_ROW_PREFIX .. section_index,
-        direction = "horizontal",
-        style_mods = {
-            vertical_align = "center",
-            horizontal_spacing = 8,
-            bottom_margin = 4
-        }
+        direction = "horizontal"
     }
+    row.style.vertical_align = "center"
+    row.style.horizontal_spacing = 8
+    row.style.bottom_margin = 4
 
     -- Get logistics groups from force
     local logistic_groups = force.get_logistic_groups() or {}
@@ -711,53 +684,45 @@ local function create_logistics_section_row(parent, section_index, section_data,
     end
 
     -- Group dropdown selector
-    row.add{
+    local group_dropdown = row.add{
         type = "drop-down",
         name = GUI_NAMES.GROUP_PICKER_PREFIX .. section_index,
         items = dropdown_items,
         selected_index = selected_index,
-        tooltip = {"gui.select-logistics-group"},
-        style_mods = {
-            width = 280,
-            horizontally_stretchable = false
-        }
+        tooltip = {"gui.select-logistics-group"}
     }
+    group_dropdown.style.width = 280
+    group_dropdown.style.horizontally_stretchable = false
 
     -- Multiplier label
-    row.add{
+    local mult_label = row.add{
         type = "label",
-        caption = "×",
-        style_mods = {
-            font = "default-bold"
-        }
+        caption = "×"
     }
+    mult_label.style.font = "default-bold"
 
     -- Multiplier textfield
-    row.add{
+    local mult_textfield = row.add{
         type = "textfield",
         name = GUI_NAMES.MULTIPLIER_PREFIX .. section_index,
         text = tostring(section_data.multiplier or 1.0),
         numeric = true,
         allow_decimal = true,
-        tooltip = {"gui.multiplier-tooltip"},
-        style_mods = {
-            width = 60,
-            horizontal_align = "center"
-        }
+        tooltip = {"gui.multiplier-tooltip"}
     }
+    mult_textfield.style.width = 60
+    mult_textfield.style.horizontal_align = "center"
 
     -- Delete section button
-    row.add{
+    local delete_button = row.add{
         type = "sprite-button",
         name = GUI_NAMES.DELETE_SECTION_PREFIX .. section_index,
         sprite = "utility/close",
         tooltip = {"gui.delete-section"},
-        style = "tool_button_red",
-        style_mods = {
-            width = 24,
-            height = 24
-        }
+        style = "tool_button_red"
     }
+    delete_button.style.width = 24
+    delete_button.style.height = 24
 
     return row
 end
@@ -772,47 +737,39 @@ local function create_actions_section(parent, entity, actions_frame)
     frame.style.padding = 8
 
     -- Header
-    frame.add{
+    local header_label = frame.add{
         type = "label",
-        caption = {"", "[font=default-semibold]Logistics Sections[/font]"},
-        style_mods = {
-            bottom_margin = 8
-        }
+        caption = {"", "[font=default-semibold]Logistics Sections[/font]"}
     }
+    header_label.style.bottom_margin = 8
 
     -- Explanation
-    frame.add{
+    local explanation_label = frame.add{
         type = "label",
-        caption = "When conditions are TRUE, inject these groups. When FALSE, remove them:",
-        style_mods = {
-            font_color = {r = 0.7, g = 0.7, b = 0.7},
-            bottom_margin = 12,
-            single_line = false
-        }
+        caption = "When conditions are TRUE, inject these groups. When FALSE, remove them:"
     }
+    explanation_label.style.font_color = {r = 0.7, g = 0.7, b = 0.7}
+    explanation_label.style.bottom_margin = 12
+    explanation_label.style.single_line = false
 
     -- Scroll pane for sections
     local scroll = frame.add{
         type = "scroll-pane",
         name = GUI_NAMES.SECTIONS_SCROLL,
         vertical_scroll_policy = "auto-and-reserve-space",
-        horizontal_scroll_policy = "never",
-        style_mods = {
-            maximal_height = 300,
-            bottom_margin = 8
-        }
+        horizontal_scroll_policy = "never"
     }
+    scroll.style.maximal_height = 300
+    scroll.style.bottom_margin = 8
 
     -- Table to hold section rows
     local sections_table = scroll.add{
         type = "table",
         name = GUI_NAMES.SECTIONS_TABLE,
-        column_count = 1,
-        style_mods = {
-            horizontally_stretchable = true,
-            vertical_spacing = 4
-        }
+        column_count = 1
     }
+    sections_table.style.horizontally_stretchable = true
+    sections_table.style.vertical_spacing = 4
 
     -- Get combinator data and create rows for existing sections
     local combinator_data = globals.get_logistics_combinator_data(entity.unit_number)
@@ -823,28 +780,24 @@ local function create_actions_section(parent, entity, actions_frame)
     end
 
     -- Add section button
-    frame.add{
+    local add_section_button = frame.add{
         type = "button",
         name = GUI_NAMES.ADD_SECTION_BUTTON,
         caption = "[img=utility/add] Add Section",
         style = "tool_button",
-        tooltip = {"gui.add-section-tooltip"},
-        style_mods = {
-            horizontally_stretchable = true,
-            bottom_margin = 8
-        }
+        tooltip = {"gui.add-section-tooltip"}
     }
+    add_section_button.style.horizontally_stretchable = true
+    add_section_button.style.bottom_margin = 8
 
     -- Connected entities count
-    frame.add{
+    local connected_label = frame.add{
         type = "label",
         name = GUI_NAMES.CONNECTED_ENTITIES_LABEL,
-        caption = "Connected entities: 0",
-        style_mods = {
-            top_margin = 4,
-            font_color = {r = 0.7, g = 0.7, b = 0.7}
-        }
+        caption = "Connected entities: 0"
     }
+    connected_label.style.top_margin = 4
+    connected_label.style.font_color = {r = 0.7, g = 0.7, b = 0.7}
 
     return frame
 end
@@ -1191,7 +1144,7 @@ function logistics_combinator_gui.on_gui_click(event)
         logistics_combinator.reconcile_sections(entity.unit_number, condition_result)
 
         -- Refresh the actions section to update indices
-        local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
+        local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME] 
         if not frame then return end
 
         local content_frame = frame.children[2]

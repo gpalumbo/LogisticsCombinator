@@ -4,6 +4,9 @@
 -- Load technologies (shared file for all techs)
 require("prototypes.technology.technologies")
 
+-- Load custom inputs (key bindings)
+require("prototypes.custom-input")
+
 -- Load custom sprites
 require("prototypes.sprite")
 

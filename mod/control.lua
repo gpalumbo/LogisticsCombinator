@@ -53,6 +53,58 @@ logistics_combinator_control.register_events()
 -- receiver_combinator_control.register_events()
 -- network_manager.register_events()
 
+-- Register custom input handler for pipette tool on GUI signal buttons
+log("Attempting to register custom input handler: logistics-combinator-pipette-signal")
+
+-- Try-catch to see if the event registration fails
+local success, err = pcall(function()
+  script.on_event("logistics-combinator-pipette-signal", function(event)
+    log("Custom input triggered! Element: " .. tostring(event.element))
+
+    -- Check if hovering over a signal sprite-button with signal data
+    if event.element and event.element.tags and event.element.tags.signal_sel then
+      local signal_id = event.element.tags.signal_sel
+      local player = game.get_player(event.player_index)
+
+      if not player then
+        log("No player found")
+        return
+      end
+
+      log("Signal type: " .. tostring(signal_id.type) .. ", name: " .. tostring(signal_id.name))
+      local signal_type = signal_id.type or "item"
+
+      -- Convert signal_id to PipetteID format
+      local pipette_id = signal_utils.signal_to_pipette_prototype(signal_id)
+
+      if pipette_id then
+        log("Attempting pipette for: " .. signal_id.name .. " (type: " .. signal_type .. ", quality: " .. tostring(signal_id.quality) .. ")")
+
+        -- Try pipette with error handling
+        local pipette_success, pipette_err = pcall(function()
+          local result = player.pipette(pipette_id, signal_id.quality, true);
+          log("Pipette result: " .. tostring(result))
+          return result
+        end)
+
+        if not pipette_success then
+          log("ERROR during pipette: " .. tostring(pipette_err))
+        end
+      else
+        log("Skipping non-pipettable signal: " .. tostring(signal_type))
+      end
+    else
+      log("No element or no signal_sel tag found")
+    end
+  end)
+end)
+
+if success then
+  log("Custom input handler registered successfully")
+else
+  log("ERROR registering custom input handler: " .. tostring(err))
+end
+
 -- Main update cycles
 -- These are registered within their respective control modules
 -- - 15-tick update for signal transmission (network_manager)
