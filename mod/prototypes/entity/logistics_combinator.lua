@@ -35,12 +35,65 @@ logistics_combinator.input_connection_bounding_box =  {{-0.5, 0}, {0.5, 1}}   --
 logistics_combinator.output_connection_bounding_box = {{-0.5, -1}, {0.5, 0}} -- Top half
 
 -- Graphics and sprites
--- TODO: Replace with custom graphics
--- For now, tint the decider combinator sprites
-if logistics_combinator.sprites then
-    -- Apply a slight blue tint to differentiate
-    logistics_combinator.sprites.tint = {r = 0.7, g = 0.7, b = 1, a = 0.5}
-end
+-- Custom logistics combinator sprite with embedded display
+-- Following base game combinator format (sprite sheet: 624x132, 4 frames of 156x132 each)
+logistics_combinator.sprites = make_4way_animation_from_spritesheet({
+    layers = {
+        {
+            scale = 0.5,
+            filename = "__mission-control__/graphics/entities/logistics-combinator.png",
+            width = 156,
+            height = 132,
+            shift = util.by_pixel(0.5, 7.5)
+        },
+        {
+            scale = 0.5,
+            filename = "__base__/graphics/entity/combinator/decider-combinator-shadow.png",
+            width = 156,
+            height = 158,
+            shift = util.by_pixel(12, 24),
+            draw_as_shadow = true
+        }
+    }
+})
+
+-- Activity LED sprites (shows when combinator is active)
+logistics_combinator.activity_led_sprites = {
+    north = util.draw_as_glow {
+        scale = 0.5,
+        filename = "__base__/graphics/entity/combinator/activity-leds/decider-combinator-LED-N.png",
+        width = 16,
+        height = 14,
+        shift = util.by_pixel(8.5, -13)
+    },
+    east = util.draw_as_glow {
+        scale = 0.5,
+        filename = "__base__/graphics/entity/combinator/activity-leds/decider-combinator-LED-E.png",
+        width = 16,
+        height = 16,
+        shift = util.by_pixel(16, -4)
+    },
+    south = util.draw_as_glow {
+        scale = 0.5,
+        filename = "__base__/graphics/entity/combinator/activity-leds/decider-combinator-LED-S.png",
+        width = 16,
+        height = 14,
+        shift = util.by_pixel(-8, 4.5)
+    },
+    west = util.draw_as_glow {
+        scale = 0.5,
+        filename = "__base__/graphics/entity/combinator/activity-leds/decider-combinator-LED-W.png",
+        width = 16,
+        height = 16,
+        shift = util.by_pixel(-15, -18.5)
+    }
+}
+
+-- Clear symbol sprites since display is embedded in main sprite
+logistics_combinator.greater_symbol_sprites = nil
+logistics_combinator.less_symbol_sprites = nil
+logistics_combinator.equal_symbol_sprites = nil
+logistics_combinator.not_equal_symbol_sprites = nil
 
 -- Fast replaceable group
 logistics_combinator.fast_replaceable_group = "combinator"
@@ -52,8 +105,7 @@ logistics_combinator.flags = {"placeable-neutral", "player-creation"}
 logistics_combinator.open_sound = { filename = "__base__/sound/machine-open.ogg", volume = 0.85 }
 logistics_combinator.close_sound = { filename = "__base__/sound/machine-close.ogg", volume = 0.75 }
 
--- TODO: LED indicators for active rules
--- This will require custom sprite definitions
+-- Note: Display grid and indicators are embedded in the sprite
 
 -- Register the entity
 data:extend({logistics_combinator})

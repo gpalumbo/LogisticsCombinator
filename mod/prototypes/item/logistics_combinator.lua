@@ -5,8 +5,7 @@ data:extend({
     {
         type = "item",
         name = "logistics-combinator",
-        -- TODO: Add custom icon
-        icon = "__base__/graphics/icons/decider-combinator.png",
+        icon = "__mission-control__/graphics/entities/logistocs_combinator_icon.png",
         icon_size = 64,
         icon_mipmaps = 4,
         subgroup = "circuit-network",
