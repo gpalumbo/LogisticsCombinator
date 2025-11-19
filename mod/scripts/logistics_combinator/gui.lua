@@ -1043,6 +1043,9 @@ function logistics_combinator_gui.on_gui_opened(event)
             globals.register_logistics_combinator(entity)
         end
 
+        -- Update connected entities for immediate feedback (avoids waiting for 90-tick poll)
+        logistics_combinator.update_connected_entities(entity.unit_number)
+
         -- Close the default combinator GUI that Factorio opened
         if player.opened == entity then
             player.opened = nil
