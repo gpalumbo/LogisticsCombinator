@@ -1,4 +1,4 @@
--- Mission Control Mod - Logistics Combinator Recipe
+-- Logistics Combinator - Recipe Prototype
 -- This file defines the logistics combinator recipe
 
 data:extend({

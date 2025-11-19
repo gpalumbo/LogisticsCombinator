@@ -1,7 +1,7 @@
--- Mission Control Mod - Technology Definitions
+-- Logistics Combinator - Technology Definitions
 -- This file contains all technology definitions for the mod
 
--- Mission Control Technology
+-- Mission Control Technology (not included in this release)
 -- Unlocks: Mission Control building, Receiver Combinator
 data:extend({
     -- {

@@ -1,4 +1,4 @@
--- Mission Control Mod - Logistics Combinator Entity Prototype
+-- Logistics Combinator - Entity Prototype
 -- This file defines the logistics combinator entity
 
 -- Create the logistics combinator entity based on decider combinator
@@ -41,7 +41,7 @@ logistics_combinator.sprites = make_4way_animation_from_spritesheet({
     layers = {
         {
             scale = 0.5,
-            filename = "__mission-control__/graphics/entities/logistics-combinator.png",
+            filename = "__logistics-combinator__/graphics/entities/logistics-combinator.png",
             width = 156,
             height = 132,
             shift = util.by_pixel(0.5, 7.5)

@@ -1,11 +1,11 @@
--- Mission Control Mod - Logistics Combinator Item
+-- Logistics Combinator - Item Prototype
 -- This file defines the logistics combinator item
 
 data:extend({
     {
         type = "item",
         name = "logistics-combinator",
-        icon = "__mission-control__/graphics/entities/logistocs_combinator_icon.png",
+        icon = "__logistics-combinator__/graphics/entities/logistocs_combinator_icon.png",
         icon_size = 64,
         icon_mipmaps = 4,
         subgroup = "circuit-network",
