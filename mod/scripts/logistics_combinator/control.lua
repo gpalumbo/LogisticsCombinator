@@ -120,7 +120,7 @@ function logistics_combinator_control.register_events()
     end)
 
     -- Wire events don't exist in Factorio API - use polling instead
-    -- Connection changes are detected by periodic polling in on_nth_tick(15)
+    -- Connection changes are detected by periodic polling in on_nth_tick(90)
 
     -- GUI events
     script.on_event(defines.events.on_gui_opened, logistics_combinator_gui.on_gui_opened)
@@ -131,21 +131,27 @@ function logistics_combinator_control.register_events()
     script.on_event(defines.events.on_gui_selection_state_changed, logistics_combinator_gui.on_gui_selection_state_changed)
     script.on_event(defines.events.on_gui_checked_state_changed, logistics_combinator_gui.on_gui_checked_state_changed)
 
-    -- Periodic update (every 15 ticks = 250ms)
+    -- Periodic connection update (every 90 ticks = 1.5 seconds)
+    -- Detects wire changes via polling (no native wire events available)
+    script.on_nth_tick(90, function()
+        if not storage.logistics_combinators then
+            return
+        end
+
+        for unit_number, combinator_data in pairs(storage.logistics_combinators) do
+            if combinator_data.entity and combinator_data.entity.valid then
+                logistics_combinator.update_connected_entities(unit_number)
+            end
+        end
+    end)
+
+    -- Periodic condition processing (every 15 ticks = 250ms)
+    -- Evaluates conditions and injects/removes logistics sections
     script.on_nth_tick(15, function()
         if not storage.logistics_combinators then
             return
         end
 
-        -- Update all logistics combinators
-        for unit_number, combinator_data in pairs(storage.logistics_combinators) do
-            if combinator_data.entity and combinator_data.entity.valid then
-                -- Update connected entities (detects wire changes via polling)
-                logistics_combinator.update_connected_entities(unit_number)
-            end
-        end
-
-        -- Process all combinator rules
         logistics_combinator.process_all_combinators()
     end)
 end
