@@ -3,6 +3,8 @@
 
 local flib_gui = require("__flib__.gui")
 local gui_utils = require("lib.gui_utils")
+local gui_entity = require("lib.gui.gui_entity")
+local gui_circuit_inputs = require("lib.gui.gui_circuit_inputs")
 local globals = require("scripts.globals")
 local circuit_utils = require("lib.circuit_utils")
 local logistics_combinator = require("scripts.logistics_combinator.logistics_combinator")
@@ -429,144 +431,13 @@ local gui_handlers = {
 -- Register handlers with FLib
 flib_gui.add_handlers(gui_handlers)
 
---- Get power status for an entity
---- @param entity LuaEntity|nil The entity to check
---- @return table Status information with sprite and text
-local function get_power_status(entity)
-    if entity and entity.valid then
-        -- Get energy ratio (current / max)
-        local energy_ratio = 0
-        if entity.electric_buffer_size and entity.electric_buffer_size > 0 then
-            energy_ratio = entity.energy / entity.electric_buffer_size
-        elseif entity.energy > 0 then
-            -- For entities without buffer, just check if they have any energy
-            energy_ratio = 1
-        end
-
-        if energy_ratio >= 0.5 then
-            -- Green: Working (>50% energy)
-            return {
-                sprite = "utility/status_working",
-                text = "Working"
-            }
-        elseif energy_ratio > 0 then
-            -- Yellow: Low Power (1-50% energy)
-            return {
-                sprite = "utility/status_yellow",
-                text = "Low Power"
-            }
-        else
-            -- Red: No Power (0% energy)
-            return {
-                sprite = "utility/status_not_working",
-                text = "No Power"
-            }
-        end
-    end
-    return {
-        sprite = "utility/bar_gray_pip",
-        text = "Unknown"
-    }
-end
-
-
---- Create signal grid display
+--- Create signal grid display (wrapper for shared library function)
 --- @param parent LuaGuiElement Parent element to add signal grid to
 --- @param entity LuaEntity The combinator entity
---- @return table References to created elements
-local function create_signal_sub_grid(parent, entity, signals)
-    -- Create scroll pane for signals
-    local scroll = parent.add{
-        type = "scroll-pane",
-        style = "flib_naked_scroll_pane_no_padding"
-    }
-    scroll.style.maximal_height = 200
-    scroll.style.minimal_width = 300
-
-    -- Create table grid with 10 columns
-    local signal_table = scroll.add{
-        type = "table",
-        name = GUI_NAMES.SIGNAL_GRID_TABLE,
-        column_count = 10
-    }
-    signal_table.style.horizontal_spacing = 0
-    signal_table.style.vertical_spacing = 0
-    signal_table.style.cell_padding = 0
-
-    -- Add signal buttons
-    for _, sig_data in ipairs(signals) do
-        -- Validate signal_id structure
-        if not sig_data or not sig_data.signal_id then
-            goto continue
-        end
-
-        if not sig_data.signal_id.name then
-            goto continue
-        end     
-        local signal_type = sig_data.signal_id.type or "item"
-        local sprite_path = signal_type .. "/" .. sig_data.signal_id.name
-
-        -- Determine color indicator sprite based on wire color
-        local slot_style
-        if sig_data.wire_color == "red" then
-            slot_style = "red_slot"
-        elseif sig_data.wire_color == "green" then
-            slot_style = "green_slot"
-        else
-            slot_style = "slot_button"
-        end
-
-        -- Add colored indicator sprite button
-        local item_slot = signal_table.add({
-            type = "sprite-button",
-            sprite = sprite_path,
-            number = sig_data.count,
-            style = slot_style,
-            quality = sig_data.signal_id.quality,
-            tags = { signal_sel= sig_data.signal_id }
-        })
-
-        ::continue::
-    end
-
-    -- If no signals, show message
-    if #signals == 0 then
-        local no_signal_label = scroll.add{
-            type = "label",
-            caption = {"", "No input signals"}
-        }
-        no_signal_label.style.font_color = {r = 0.6, g = 0.6, b = 0.6}
-    end
-    return scroll
-end
-
-
---- Create signal grid display
---- @param parent LuaGuiElement Parent element to add signal grid to
---- @param entity LuaEntity The combinator entity
+--- @param signal_grid_frame LuaGuiElement|nil Optional existing frame to reuse
 --- @return table References to created elements
 local function create_signal_grid(parent, entity, signal_grid_frame)
-
-
-    -- Create frame for signal grid
-    local grid_frame = signal_grid_frame or parent.add{
-        type = "frame",
-        name = GUI_NAMES.SIGNAL_GRID_FRAME,
-        direction = "vertical",
-        style = "inside_shallow_frame"
-    }
-    grid_frame.style.padding = 8
-    grid_frame.style.horizontally_stretchable = true
-
-    local signal_header = grid_frame.add{
-        type = "label",
-        caption = {"", "[font=default-semibold]Input Signals[/font]"}
-    }
-    signal_header.style.bottom_margin = 4
-    local signals = circuit_utils.get_input_signals(entity)
-    create_signal_sub_grid(grid_frame, entity,signals.red)
-    create_signal_sub_grid(grid_frame, entity,signals.green)
-    return {signal_grid_frame = grid_frame, signal_grid_table = signal_table}
+    return gui_circuit_inputs.create_signal_grid(parent, entity, signal_grid_frame, GUI_NAMES.SIGNAL_GRID_FRAME)
 end
 
 
@@ -870,7 +741,7 @@ function logistics_combinator_gui.create_gui(player, entity)
                             {
                                 type = "sprite",
                                 name = GUI_NAMES.POWER_LABEL .. "_sprite",
-                                sprite = get_power_status(entity).sprite,
+                                sprite = gui_entity.get_power_status(entity).sprite,
                                 style_mods = {
                                     stretch_image_to_widget_size = false
                                 }
@@ -878,7 +749,7 @@ function logistics_combinator_gui.create_gui(player, entity)
                             {
                                 type = "label",
                                 name = GUI_NAMES.POWER_LABEL,
-                                caption = get_power_status(entity).text
+                                caption = gui_entity.get_power_status(entity).text
                             },
                         
                             {
@@ -970,7 +841,7 @@ function logistics_combinator_gui.update_gui(player)
     local entity = combinator_data.entity
 
     -- Update power status
-    local power_status = get_power_status(entity)
+    local power_status = gui_entity.get_power_status(entity)
     local power_sprite = frame[GUI_NAMES.POWER_LABEL .. "_sprite"]
     local power_label = frame[GUI_NAMES.POWER_LABEL]
 

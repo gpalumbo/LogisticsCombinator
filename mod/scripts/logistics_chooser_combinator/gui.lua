@@ -1,0 +1,698 @@
+-- Mission Control Mod - Logistics Chooser Combinator GUI
+-- This module handles the GUI for logistics chooser combinators
+-- The chooser allows selecting ONE logistics group from a list based on signal values
+
+local flib_gui = require("__flib__.gui")
+local gui_utils = require("lib.gui_utils")
+local gui_entity = require("lib.gui.gui_entity")
+local gui_circuit_inputs = require("lib.gui.gui_circuit_inputs")
+local globals = require("scripts.globals")
+
+local logistics_chooser_gui = {}
+
+-- GUI element names
+local GUI_NAMES = {
+    MAIN_FRAME = "logistics_chooser_frame",
+    TITLEBAR_FLOW = "logistics_chooser_titlebar_flow",
+    DRAG_HANDLE = "logistics_chooser_drag_handle",
+    CLOSE_BUTTON = "logistics_chooser_close",
+    POWER_LABEL = "logistics_chooser_power",
+    SIGNAL_GRID_FRAME = "logistics_chooser_signal_grid_frame",
+    SIGNAL_GRID_TABLE = "logistics_chooser_signal_grid_table",
+    GROUPS_FRAME = "logistics_chooser_groups_frame",
+    GROUPS_SCROLL = "logistics_chooser_groups_scroll",
+    GROUPS_TABLE = "logistics_chooser_groups_table",
+    ADD_GROUP_BUTTON = "logistics_chooser_add_group",
+    GROUP_ROW_PREFIX = "logistics_chooser_group_row_",
+    GROUP_PICKER_PREFIX = "logistics_chooser_group_picker_",
+    SIGNAL_PICKER_PREFIX = "logistics_chooser_signal_picker_",
+    OPERATOR_DROPDOWN_PREFIX = "logistics_chooser_operator_",
+    VALUE_TEXTFIELD_PREFIX = "logistics_chooser_value_",
+    DELETE_GROUP_PREFIX = "logistics_chooser_delete_group_",
+    CONNECTED_ENTITIES_LABEL = "logistics_chooser_connected_count",
+    ACTIVE_GROUP_LABEL = "logistics_chooser_active_group"
+}
+
+-- ============================================================================
+-- UTILITY FUNCTIONS
+-- ============================================================================
+
+--- Get chooser data from player's GUI state
+--- @param player LuaPlayer
+--- @return table|nil chooser_data, LuaEntity|nil entity
+local function get_chooser_data_from_player(player)
+    if not player then return nil, nil end
+
+    local gui_state = globals.get_player_gui_state(player.index)
+    if not gui_state then return nil, nil end
+
+    local chooser_data = globals.get_logistics_chooser_data(gui_state.open_entity)
+    if not chooser_data or not chooser_data.entity or not chooser_data.entity.valid then
+        return nil, nil
+    end
+
+    return chooser_data, chooser_data.entity
+end
+
+--- Get groups table GUI element
+--- @param player LuaPlayer
+--- @return LuaGuiElement|nil groups_table
+local function get_groups_table(player)
+    local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
+    if not frame then return nil end
+
+    local content_frame = frame.children[2]  -- inside_shallow_frame
+    if not content_frame then return nil end
+
+    local groups_frame = content_frame[GUI_NAMES.GROUPS_FRAME]
+    if not groups_frame then return nil end
+
+    local scroll = groups_frame[GUI_NAMES.GROUPS_SCROLL]
+    if not scroll then return nil end
+
+    return scroll[GUI_NAMES.GROUPS_TABLE]
+end
+
+-- ============================================================================
+-- GUI ELEMENT CREATION HELPERS (must be before handlers that use them)
+-- ============================================================================
+
+--- Create a single group selection row
+--- @param parent LuaGuiElement The parent table element
+--- @param group_index number The index of this group
+--- @param group_data table The group data {group, signal, operator, value}
+--- @param force LuaForce The force to get logistics groups from
+local function create_group_row(parent, group_index, group_data, force)
+    group_data = group_data or {group = nil, signal = nil, operator = "=", value = 0}
+
+    local row = parent.add{
+        type = "flow",
+        name = GUI_NAMES.GROUP_ROW_PREFIX .. group_index,
+        direction = "horizontal"
+    }
+    row.style.vertical_align = "center"
+    row.style.horizontal_spacing = 8
+    row.style.bottom_margin = 4
+
+    -- Get logistics groups from force
+    local logistic_groups = force.get_logistic_groups() or {}
+
+    -- Create dropdown items: ["<none>", group1, group2, ...]
+    local dropdown_items = {"<none>"}
+    for _, group_name in ipairs(logistic_groups) do
+        table.insert(dropdown_items, group_name)
+    end
+
+    -- Find selected index
+    local selected_index = 1
+    if group_data.group then
+        for i, group_name in ipairs(dropdown_items) do
+            if group_name == group_data.group then
+                selected_index = i
+                break
+            end
+        end
+    end
+
+    -- Group dropdown selector
+    local group_dropdown = row.add{
+        type = "drop-down",
+        name = GUI_NAMES.GROUP_PICKER_PREFIX .. group_index,
+        items = dropdown_items,
+        selected_index = selected_index,
+        tooltip = "Select logistics group to activate"
+    }
+    group_dropdown.style.width = 200
+    group_dropdown.style.horizontally_stretchable = false
+
+    -- "When" label
+    local when_label = row.add{
+        type = "label",
+        caption = "when"
+    }
+    when_label.style.left_margin = 8
+    when_label.style.right_margin = 4
+
+    -- Signal picker
+    local signal_picker = row.add{
+        type = "choose-elem-button",
+        name = GUI_NAMES.SIGNAL_PICKER_PREFIX .. group_index,
+        elem_type = "signal",
+        signal = group_data.signal,
+        tooltip = "Signal to check"
+    }
+    signal_picker.style.width = 40
+    signal_picker.style.height = 40
+
+    -- Operator dropdown
+    local operator_items = {"<", ">", "=", "≠", "≤", "≥"}
+    local operator_index = gui_utils.get_index_from_operator(group_data.operator or "=")
+
+    local operator_dropdown = row.add{
+        type = "drop-down",
+        name = GUI_NAMES.OPERATOR_DROPDOWN_PREFIX .. group_index,
+        items = operator_items,
+        selected_index = operator_index,
+        tooltip = "Comparison operator"
+    }
+    operator_dropdown.style.width = 50
+    operator_dropdown.style.left_margin = 4
+    operator_dropdown.style.right_margin = 4
+
+    -- Value textfield
+    local value_textfield = row.add{
+        type = "textfield",
+        name = GUI_NAMES.VALUE_TEXTFIELD_PREFIX .. group_index,
+        text = tostring(group_data.value or 0),
+        numeric = true,
+        allow_decimal = false,
+        tooltip = "Value to match"
+    }
+    value_textfield.style.width = 80
+    value_textfield.style.horizontal_align = "center"
+
+    -- Delete button
+    local delete_button = row.add{
+        type = "sprite-button",
+        name = GUI_NAMES.DELETE_GROUP_PREFIX .. group_index,
+        sprite = "utility/close",
+        tooltip = "Remove this group",
+        style = "tool_button_red"
+    }
+    delete_button.style.width = 24
+    delete_button.style.height = 24
+    delete_button.style.left_margin = 8
+
+    return row
+end
+
+-- ============================================================================
+-- EVENT HANDLERS
+-- ============================================================================
+
+local gui_handlers = {
+    chooser_close_button = function(e)
+        local player = game.get_player(e.player_index)
+        if player then
+            logistics_chooser_gui.close_gui(player)
+        end
+    end,
+
+    -- Add new group selection row
+    chooser_add_group_button = function(e)
+        local player = game.get_player(e.player_index)
+        if not player then return end
+
+        local chooser_data, entity = get_chooser_data_from_player(player)
+        if not chooser_data then return end
+
+        -- Create new group selection
+        local new_group = {
+            group = nil,          -- Logistics group name
+            signal = nil,         -- Signal to check
+            operator = "=",       -- Comparison operator
+            value = 0             -- Value to match
+        }
+
+        -- Add to storage
+        globals.add_chooser_group(entity.unit_number, new_group)
+
+        -- Get groups table
+        local groups_table = get_groups_table(player)
+        if not groups_table then return end
+
+        local group_count = #chooser_data.groups
+        create_group_row(groups_table, group_count, new_group, entity.force)
+    end,
+
+    -- Delete group row
+    chooser_delete_group = function(e)
+        local player = game.get_player(e.player_index)
+        if not player then return end
+
+        -- Parse element name to get group index
+        local element_name = e.element.name
+        local group_index = tonumber(element_name:match("^" .. GUI_NAMES.DELETE_GROUP_PREFIX .. "(%d+)$"))
+        if not group_index then return end
+
+        local chooser_data, entity = get_chooser_data_from_player(player)
+        if not chooser_data then return end
+
+        -- Remove from storage
+        globals.remove_chooser_group(entity.unit_number, group_index)
+
+        -- Get groups table
+        local groups_table = get_groups_table(player)
+        if not groups_table then return end
+
+        -- Clear and rebuild
+        groups_table.clear()
+
+        -- Rebuild all group rows with updated indices
+        local updated_groups = chooser_data.groups
+        if updated_groups then
+            for i, group in ipairs(updated_groups) do
+                create_group_row(groups_table, i, group, entity.force)
+            end
+        end
+    end
+}
+
+-- Register handlers with FLib
+flib_gui.add_handlers(gui_handlers)
+
+-- ============================================================================
+-- GUI CREATION FUNCTIONS
+-- ============================================================================
+
+--- Create signal grid display (wrapper for shared library function)
+--- @param parent LuaGuiElement Parent element
+--- @param entity LuaEntity The chooser entity
+--- @param signal_grid_frame LuaGuiElement|nil Existing frame to reuse
+--- @return table References to created elements
+local function create_signal_grid(parent, entity, signal_grid_frame)
+    return gui_circuit_inputs.create_signal_grid(parent, entity, signal_grid_frame, GUI_NAMES.SIGNAL_GRID_FRAME)
+end
+
+--- Create groups selection panel
+--- @param parent LuaGuiElement Parent element
+--- @param entity LuaEntity The chooser entity
+local function create_groups_panel(parent, entity)
+    local frame = parent.add{
+        type = "frame",
+        name = GUI_NAMES.GROUPS_FRAME,
+        direction = "vertical",
+        style = "inside_deep_frame"
+    }
+    frame.style.padding = 8
+    frame.style.horizontally_stretchable = true
+
+    -- Header
+    local header_flow = frame.add{
+        type = "flow",
+        direction = "horizontal"
+    }
+    header_flow.style.vertical_align = "center"
+    header_flow.style.bottom_margin = 4
+
+    header_flow.add{
+        type = "label",
+        caption = {"", "[font=default-semibold]Group Selection[/font]"}
+    }
+
+    -- Explanation
+    local explanation = frame.add{
+        type = "label",
+        caption = "Select which logistics group to activate based on signal values:"
+    }
+    explanation.style.font_color = {r = 0.7, g = 0.7, b = 0.7}
+    explanation.style.bottom_margin = 8
+    explanation.style.single_line = false
+
+    -- Scroll pane for group rows
+    local scroll = frame.add{
+        type = "scroll-pane",
+        name = GUI_NAMES.GROUPS_SCROLL,
+        direction = "vertical",
+        style = "flib_naked_scroll_pane"
+    }
+    scroll.style.maximal_height = 400
+    scroll.style.minimal_height = 100
+    scroll.style.horizontally_stretchable = true
+
+    -- Table to hold group rows
+    local groups_table = scroll.add{
+        type = "table",
+        name = GUI_NAMES.GROUPS_TABLE,
+        column_count = 1
+    }
+    groups_table.style.vertical_spacing = 2
+    groups_table.style.horizontally_stretchable = true
+
+    -- Load existing groups from storage
+    local chooser_data = globals.get_logistics_chooser_data(entity.unit_number)
+    if chooser_data and chooser_data.groups then
+        for i, group in ipairs(chooser_data.groups) do
+            create_group_row(groups_table, i, group, entity.force)
+        end
+    end
+
+    -- Add group button
+    local add_button = frame.add{
+        type = "button",
+        name = GUI_NAMES.ADD_GROUP_BUTTON,
+        caption = "[img=utility/add] Add Group",
+        style = "green_button",
+        tooltip = {"gui.logistics-chooser-combinator-add-group"}
+    }
+    add_button.style.top_margin = 8
+    add_button.style.horizontally_stretchable = true
+
+    -- Active group indicator
+    local active_flow = frame.add{
+        type = "flow",
+        direction = "horizontal"
+    }
+    active_flow.style.top_margin = 12
+    active_flow.style.vertical_align = "center"
+
+    active_flow.add{
+        type = "label",
+        caption = "Active group: "
+    }
+    active_flow.style.font = "default-semibold"
+
+    local active_label = active_flow.add{
+        type = "label",
+        name = GUI_NAMES.ACTIVE_GROUP_LABEL,
+        caption = "<none>"
+    }
+    active_label.style.font_color = {r = 0.5, g = 1.0, b = 0.5}
+
+    -- Connected entities count
+    local connected_label = frame.add{
+        type = "label",
+        name = GUI_NAMES.CONNECTED_ENTITIES_LABEL,
+        caption = "Connected entities: 0"
+    }
+    connected_label.style.top_margin = 4
+    connected_label.style.font_color = {r = 0.7, g = 0.7, b = 0.7}
+
+    return frame
+end
+
+--- Create the main logistics chooser GUI
+--- @param player LuaPlayer
+--- @param entity LuaEntity The logistics chooser combinator entity
+function logistics_chooser_gui.create_gui(player, entity)
+    -- Close any existing GUI
+    logistics_chooser_gui.close_gui(player)
+
+    -- Create main frame using FLib
+    local refs = flib_gui.add(player.gui.screen, {
+        type = "frame",
+        name = GUI_NAMES.MAIN_FRAME,
+        direction = "vertical",
+        style_mods = {
+            minimal_width = 700,  -- Make window wider to prevent horizontal scrolling
+            maximal_width = 900
+        },
+        children = {
+            -- Titlebar with drag handle
+            {
+                type = "flow",
+                name = GUI_NAMES.TITLEBAR_FLOW,
+                style = "flib_titlebar_flow",
+                drag_target = GUI_NAMES.MAIN_FRAME,
+                children = {
+                    {
+                        type = "label",
+                        style = "frame_title",
+                        caption = {"entity-name.logistics-chooser-combinator"},
+                        ignored_by_interaction = true
+                    },
+                    {
+                        type = "empty-widget",
+                        name = GUI_NAMES.DRAG_HANDLE,
+                        style = "flib_titlebar_drag_handle",
+                        ignored_by_interaction = false,
+                        drag_target = GUI_NAMES.MAIN_FRAME,
+                    },
+                    {
+                        type = "sprite-button",
+                        name = GUI_NAMES.CLOSE_BUTTON,
+                        style = "frame_action_button",
+                        sprite = "utility/close",
+                        hovered_sprite = "utility/close_black",
+                        clicked_sprite = "utility/close_black",
+                        tooltip = {"gui.close-instruction"},
+                        handler = gui_handlers.chooser_close_button
+                    }
+                }
+            },
+            -- Content frame
+            {
+                type = "frame",
+                style = "inside_shallow_frame",
+                direction = "vertical",
+                children = {
+                    -- Power status
+                    {
+                        type = "flow",
+                        direction = "horizontal",
+                        style_mods = {
+                            vertical_align = "center",
+                            horizontal_spacing = 8,
+                            bottom_margin = 8
+                        },
+                        children = {
+                            {
+                                type = "label",
+                                caption = "Status: "
+                            },
+                            {
+                                type = "sprite",
+                                name = GUI_NAMES.POWER_LABEL .. "_sprite",
+                                sprite = gui_entity.get_power_status(entity).sprite,
+                                style_mods = {
+                                    stretch_image_to_widget_size = false
+                                }
+                            },
+                            {
+                                type = "label",
+                                name = GUI_NAMES.POWER_LABEL,
+                                caption = gui_entity.get_power_status(entity).text
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    })
+
+    -- Add UI sections after main frame creation
+    local content_frame = refs[GUI_NAMES.MAIN_FRAME].children[2]  -- The inside_shallow_frame
+
+    -- Add groups panel
+    create_groups_panel(content_frame, entity)
+
+    -- Add signal grid
+    create_signal_grid(content_frame, entity)
+
+    -- Center the window
+    refs[GUI_NAMES.MAIN_FRAME].auto_center = true
+
+    -- Make the GUI respond to ESC key
+    player.opened = refs[GUI_NAMES.MAIN_FRAME]
+
+    -- Store entity reference in player's GUI state
+    globals.set_player_gui_entity(player.index, entity, "logistics_chooser")
+end
+
+--- Update the GUI with current chooser state
+--- @param player LuaPlayer
+function logistics_chooser_gui.update_gui(player)
+    local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
+    if not frame then return end
+
+    local gui_state = globals.get_player_gui_state(player.index)
+    if not gui_state or gui_state.gui_type ~= "logistics_chooser" then return end
+
+    local chooser_data = globals.get_logistics_chooser_data(gui_state.open_entity)
+    if not chooser_data or not chooser_data.entity or not chooser_data.entity.valid then
+        logistics_chooser_gui.close_gui(player)
+        return
+    end
+
+    local entity = chooser_data.entity
+
+    -- Update power status
+    local power_status = gui_entity.get_power_status(entity)
+    local power_sprite = frame[GUI_NAMES.POWER_LABEL .. "_sprite"]
+    local power_label = frame[GUI_NAMES.POWER_LABEL]
+
+    if power_sprite then
+        power_sprite.sprite = power_status.sprite
+    end
+    if power_label then
+        power_label.caption = power_status.text
+    end
+
+    -- Update signal grid
+    local signal_grid_frame = frame[GUI_NAMES.SIGNAL_GRID_FRAME]
+    if signal_grid_frame then
+        signal_grid_frame.clear()
+        local content_frame = frame.children[2]
+        create_signal_grid(content_frame, entity, signal_grid_frame)
+    end
+
+    -- TODO: Update active group indicator
+    -- TODO: Update connected entities count
+end
+
+--- Close the logistics chooser GUI
+--- @param player LuaPlayer
+function logistics_chooser_gui.close_gui(player)
+    local gui_state = globals.get_player_gui_state(player.index)
+    local entity = nil
+
+    if gui_state and gui_state.open_entity then
+        local chooser_data = globals.get_logistics_chooser_data(gui_state.open_entity)
+        if chooser_data and chooser_data.entity and chooser_data.entity.valid then
+            entity = chooser_data.entity
+        end
+    end
+
+    local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
+    if frame then
+        frame.destroy()
+    end
+
+    -- Clear stored entity reference
+    globals.clear_player_gui_entity(player.index)
+
+    -- If we had an entity, update its state immediately
+    if entity and entity.valid then
+        local unit_number = entity.unit_number
+        if unit_number then
+            -- TODO: Trigger update logic when implemented
+            -- logistics_chooser.update_connected_entities(unit_number)
+            -- logistics_chooser.process_selection(unit_number)
+        end
+    end
+end
+
+--- Handle GUI opened event
+--- @param event EventData.on_gui_opened
+function logistics_chooser_gui.on_gui_opened(event)
+    local entity = event.entity
+    if entity and entity.valid and entity.name == "logistics-chooser-combinator" then
+        local player = game.players[event.player_index]
+
+        -- Ensure entity is registered
+        if not globals.get_logistics_chooser_data(entity.unit_number) then
+            globals.register_logistics_chooser(entity)
+        end
+
+        -- Close the default combinator GUI that Factorio opened
+        if player.opened == entity then
+            player.opened = nil
+        end
+
+        -- Open our custom GUI
+        logistics_chooser_gui.create_gui(player, entity)
+    end
+end
+
+--- Handle GUI closed event
+--- @param event EventData.on_gui_closed
+function logistics_chooser_gui.on_gui_closed(event)
+    if event.element and event.element.name == GUI_NAMES.MAIN_FRAME then
+        logistics_chooser_gui.close_gui(game.players[event.player_index])
+    end
+end
+
+--- Handle GUI click events
+--- @param event EventData.on_gui_click
+function logistics_chooser_gui.on_gui_click(event)
+    -- First try FLib handlers
+    flib_gui.dispatch(event)
+
+    local element = event.element
+    if not element or not element.valid then return end
+
+    -- Handle add group button
+    if element.name == GUI_NAMES.ADD_GROUP_BUTTON then
+        gui_handlers.chooser_add_group_button(event)
+        return
+    end
+
+    -- Handle delete group button
+    if element.name:match("^" .. GUI_NAMES.DELETE_GROUP_PREFIX) then
+        gui_handlers.chooser_delete_group(event)
+        return
+    end
+end
+
+--- Handle GUI element changed events
+--- @param event EventData.on_gui_elem_changed
+function logistics_chooser_gui.on_gui_elem_changed(event)
+    local element = event.element
+    if not element or not element.valid then return end
+    local player = game.get_player(event.player_index)
+    if not player then return end
+
+    local chooser_data, entity = get_chooser_data_from_player(player)
+    if not chooser_data then return end
+
+    -- Handle signal picker changed
+    local signal_index = element.name:match("^" .. GUI_NAMES.SIGNAL_PICKER_PREFIX .. "(%d+)$")
+    if signal_index then
+        local group_index = tonumber(signal_index)
+        if chooser_data.groups and chooser_data.groups[group_index] then
+            chooser_data.groups[group_index].signal = element.elem_value
+            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+        end
+        return
+    end
+end
+
+--- Handle GUI text changed events
+--- @param event EventData.on_gui_text_changed
+function logistics_chooser_gui.on_gui_text_changed(event)
+    local element = event.element
+    if not element or not element.valid then return end
+    local player = game.get_player(event.player_index)
+    if not player then return end
+
+    local chooser_data, entity = get_chooser_data_from_player(player)
+    if not chooser_data then return end
+
+    -- Handle value textfield changed
+    local value_index = element.name:match("^" .. GUI_NAMES.VALUE_TEXTFIELD_PREFIX .. "(%d+)$")
+    if value_index then
+        local group_index = tonumber(value_index)
+        if chooser_data.groups and chooser_data.groups[group_index] then
+            chooser_data.groups[group_index].value = tonumber(element.text) or 0
+            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+        end
+        return
+    end
+end
+
+--- Handle GUI selection state changed events
+--- @param event EventData.on_gui_selection_state_changed
+function logistics_chooser_gui.on_gui_selection_state_changed(event)
+    local element = event.element
+    if not element or not element.valid then return end
+    local player = game.get_player(event.player_index)
+    if not player then return end
+
+    local chooser_data, entity = get_chooser_data_from_player(player)
+    if not chooser_data then return end
+
+    -- Handle group picker changed
+    local picker_index = element.name:match("^" .. GUI_NAMES.GROUP_PICKER_PREFIX .. "(%d+)$")
+    if picker_index then
+        local group_index = tonumber(picker_index)
+        if chooser_data.groups and chooser_data.groups[group_index] then
+            local selected_item = element.items[element.selected_index]
+            chooser_data.groups[group_index].group = (selected_item == "<none>") and nil or selected_item
+            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+        end
+        return
+    end
+
+    -- Handle operator dropdown changed
+    local operator_index = element.name:match("^" .. GUI_NAMES.OPERATOR_DROPDOWN_PREFIX .. "(%d+)$")
+    if operator_index then
+        local group_index = tonumber(operator_index)
+        if chooser_data.groups and chooser_data.groups[group_index] then
+            chooser_data.groups[group_index].operator = gui_utils.get_operator_from_index(element.selected_index)
+            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+        end
+        return
+    end
+end
+
+return logistics_chooser_gui
