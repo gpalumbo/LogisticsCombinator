@@ -68,6 +68,10 @@ data:extend({
             {
                 type = "unlock-recipe",
                 recipe = "logistics-combinator"
+            },
+            {
+                type = "unlock-recipe",
+                recipe = "logistics-chooser-combinator"
             }
         },
         order = "a-h-g"
