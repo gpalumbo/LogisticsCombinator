@@ -159,20 +159,25 @@ end
 --- @param group_data table The group data {group, condition, multiplier, is_active}
 --- @param force LuaForce The force to get logistics groups from
 local function create_group_row(parent, group_index, group_data, force)
-    group_data = group_data or {
-        group = nil,
-        condition = {
-            left_wire_filter = "both",  -- "red", "green", "both", or "none"
-            left_signal = nil,
-            operator = "=",
-            right_type = "constant",
-            right_value = 0,
-            right_signal = nil,
-            right_wire_filter = "both"  -- "red", "green", "both", or "none"
-        },
-        multiplier = 1.0,
-        is_active = false
-    }
+    -- Ensure group_data has complete structure with defaults
+    group_data = group_data or {}
+
+    -- Ensure condition exists and has all required fields
+    if not group_data.condition then
+        group_data.condition = {}
+    end
+
+    -- Fill in missing condition fields with defaults
+    local condition = group_data.condition
+    if not condition.left_wire_filter then condition.left_wire_filter = "both" end
+    if not condition.operator then condition.operator = "=" end
+    if not condition.right_type then condition.right_type = "constant" end
+    if not condition.right_value then condition.right_value = 0 end
+    if not condition.right_wire_filter then condition.right_wire_filter = "both" end
+
+    -- Ensure other group fields exist
+    if group_data.multiplier == nil then group_data.multiplier = 1.0 end
+    if group_data.is_active == nil then group_data.is_active = false end
 
     -- Main row container
     local row_container = parent.add{
@@ -957,16 +962,32 @@ function logistics_chooser_gui.on_gui_checked_state_changed(event)
         local group_index = tonumber(left_wire_index)
         if not chooser_data.groups or not chooser_data.groups[group_index] then return end
 
-        -- Find both checkboxes to determine filter value
-        -- Structure: checkbox -> checkbox_panel (flow) -> filter_flow -> condition_row
-        -- The filter_flow has the checkboxes as named children
-        local filter_flow = element.parent.parent
-        if not filter_flow then return end
+        -- Find the filter flow (parent.parent of checkbox)
+        -- Structure: checkbox -> checkbox_panel (flow) -> filter_flow
+        local filter_flow = element.parent and element.parent.parent
+        if not filter_flow or not filter_flow.valid then return end
 
-        local red_checkbox = filter_flow["cond_" .. group_index .. "_left_wire_red"]
-        local green_checkbox = filter_flow["cond_" .. group_index .. "_left_wire_green"]
+        -- Find both checkboxes by recursively searching filter_flow's children
+        local red_checkbox = nil
+        local green_checkbox = nil
 
-        if red_checkbox and green_checkbox then
+        -- Search through all children recursively
+        local function find_checkboxes(parent)
+            if not parent or not parent.children then return end
+            for _, child in pairs(parent.children) do
+                if child.name == "cond_" .. group_index .. "_left_wire_red" then
+                    red_checkbox = child
+                elseif child.name == "cond_" .. group_index .. "_left_wire_green" then
+                    green_checkbox = child
+                end
+                if red_checkbox and green_checkbox then return end
+                find_checkboxes(child)  -- Recurse
+            end
+        end
+
+        find_checkboxes(filter_flow)
+
+        if red_checkbox and green_checkbox and red_checkbox.valid and green_checkbox.valid then
             local filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
             chooser_data.groups[group_index].condition.left_wire_filter = filter
             globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
@@ -982,16 +1003,32 @@ function logistics_chooser_gui.on_gui_checked_state_changed(event)
         local group_index = tonumber(right_wire_index)
         if not chooser_data.groups or not chooser_data.groups[group_index] then return end
 
-        -- Find both checkboxes
-        -- Structure: checkbox -> checkbox_panel (flow) -> filter_flow -> condition_row
-        -- The filter_flow has the checkboxes as named children
-        local filter_flow = element.parent.parent
-        if not filter_flow then return end
+        -- Find the filter flow (parent.parent of checkbox)
+        -- Structure: checkbox -> checkbox_panel (flow) -> filter_flow
+        local filter_flow = element.parent and element.parent.parent
+        if not filter_flow or not filter_flow.valid then return end
 
-        local red_checkbox = filter_flow["cond_" .. group_index .. "_right_wire_red"]
-        local green_checkbox = filter_flow["cond_" .. group_index .. "_right_wire_green"]
+        -- Find both checkboxes by recursively searching filter_flow's children
+        local red_checkbox = nil
+        local green_checkbox = nil
 
-        if red_checkbox and green_checkbox then
+        -- Search through all children recursively
+        local function find_checkboxes(parent)
+            if not parent or not parent.children then return end
+            for _, child in pairs(parent.children) do
+                if child.name == "cond_" .. group_index .. "_right_wire_red" then
+                    red_checkbox = child
+                elseif child.name == "cond_" .. group_index .. "_right_wire_green" then
+                    green_checkbox = child
+                end
+                if red_checkbox and green_checkbox then return end
+                find_checkboxes(child)  -- Recurse
+            end
+        end
+
+        find_checkboxes(filter_flow)
+
+        if red_checkbox and green_checkbox and red_checkbox.valid and green_checkbox.valid then
             local filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
             chooser_data.groups[group_index].condition.right_wire_filter = filter
             globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])

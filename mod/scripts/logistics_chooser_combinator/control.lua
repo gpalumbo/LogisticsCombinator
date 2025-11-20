@@ -151,6 +151,22 @@ function logistics_chooser_control.on_configuration_changed()
                         if group.is_active == nil then
                             group.is_active = false
                         end
+                    else
+                        -- Condition exists, but ensure wire_filter fields exist (added in later version)
+                        if not group.condition.left_wire_filter then
+                            group.condition.left_wire_filter = "both"
+                        end
+                        if not group.condition.right_wire_filter then
+                            group.condition.right_wire_filter = "both"
+                        end
+
+                        -- Ensure multiplier and is_active exist
+                        if group.multiplier == nil then
+                            group.multiplier = 1.0
+                        end
+                        if group.is_active == nil then
+                            group.is_active = false
+                        end
                     end
                 end
             end
