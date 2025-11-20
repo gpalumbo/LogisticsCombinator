@@ -4,6 +4,7 @@
 local signal_utils = require("lib.signal_utils")
 local circuit_utils = require("lib.circuit_utils")
 local logistics_utils = require("lib.logistics_utils")
+local logistics_injection = require("lib.logistics_injection")
 local gui_utils = require("lib.gui_utils")
 local globals = require("scripts.globals")
 
@@ -118,8 +119,8 @@ function logistics_combinator.update_connected_entities(unit_number)
 
     local entity = combinator_data.entity
 
-    -- Use the new circuit_utils function to find logistics-capable entities
-    local logistics_entities = circuit_utils.find_logistics_entities_on_output(entity)
+    -- Use shared logistics_injection function to find connected entities
+    local logistics_entities = logistics_injection.update_connected_entities(entity)
 
     -- Store entity references directly (not unit_numbers)
     -- This is more efficient and avoids lookup overhead
@@ -150,168 +151,68 @@ function logistics_combinator.reconcile_sections(unit_number, should_inject)
     -- Get connected entities
     local connected_entities = combinator_data.connected_entities or {}
 
-    -- Build a lookup table of configured sections for fast checking
-    local configured_lookup = {}
-    for _, section in ipairs(configured_sections) do
-        if section.group then
-            local key = section.group .. "|" .. (section.multiplier or 1.0)
-            configured_lookup[key] = section
-        end
-    end
+    -- Determine desired sections based on condition
+    local desired_sections = should_inject and configured_sections or {}
 
-    -- For each connected entity, reconcile its sections
-    for _, target_entity in ipairs(connected_entities) do
-        if target_entity.valid then
-            local entity_tracking = tracking[target_entity.unit_number]
-
-            -- Step 1: Remove tracked sections that shouldn't be present
-            -- (either not configured anymore, or condition is false)
-            if entity_tracking and entity_tracking.sections then
-                for _, tracked_section in ipairs(entity_tracking.sections) do
-                    local key = tracked_section.group .. "|" .. tracked_section.multiplier
-                    local is_configured = configured_lookup[key] ~= nil
-
-                    if not is_configured or not should_inject then
-                        -- Section was deleted/changed OR condition is false -> remove it
-                        logistics_combinator.remove_group(
-                            unit_number,
-                            target_entity,
-                            tracked_section.group,
-                            tracked_section
-                        )
-                    end
-                end
-            end
-
-            -- Step 2: Inject configured sections if condition is true
-            if should_inject then
-                for _, section in ipairs(configured_sections) do
-                    if section.group then
-                        logistics_combinator.inject_group(
-                            unit_number,
-                            target_entity,
-                            section.group,
-                            section
-                        )
-                    end
-                end
-            end
-        end
-    end
+    -- Use shared reconciliation logic
+    logistics_injection.reconcile_sections(
+        unit_number,
+        connected_entities,
+        desired_sections,
+        tracking,
+        globals.track_injected_section,
+        globals.remove_tracked_section
+    )
 end
 
 --- Handle injection of a logistics group
+--- NOTE: This function is now a thin wrapper around the shared logistics_injection module
 --- @param combinator_unit_number number The combinator's unit number
 --- @param entity LuaEntity Target entity
 --- @param group_name string Name of the group to inject
 --- @param section_data table Section data with group and multiplier
 function logistics_combinator.inject_group(combinator_unit_number, entity, group_name, section_data)
-    if not entity or not entity.valid then
-        return  -- Entity destroyed
-    end
-
-    -- Check if entity has logistics capability (safe check)
-    if not logistics_utils.supports_logistics_control(entity) then
-        return  -- Not a logistics-capable entity
-    end
-
-    local requester_point = entity.get_requester_point()
-    if not requester_point then
-        return  -- Entity doesn't have requester point
-    end
-
-    local sections = requester_point.sections
-    local multiplier = section_data.multiplier or 1.0
-
-    -- Find the LAST section matching {group_name, multiplier} tuple
-    -- We search backwards to find the most recently added section
-    local existing_section_index = nil
-    for i = #sections, 1, -1 do
-        local section = sections[i]
-        if section and section.group == group_name and section.multiplier == multiplier then
-            existing_section_index = i
-            break  -- Found the last match
-        end
-    end
-
-    if existing_section_index then
-        -- Section already exists with matching group and multiplier
-        -- This is assumed to be our injected section, so nothing to do
-        return
-    end
-
-    -- Section doesn't exist - inject a new one
-    local section_index, err = logistics_utils.inject_logistics_group(
+    local success = logistics_injection.inject_group(
+        combinator_unit_number,
         entity,
         group_name,
-        combinator_unit_number
+        section_data
     )
 
-    if not section_index then
-        -- Failed to inject group
-        return
+    if success then
+        -- Track the injection
+        globals.track_injected_section(
+            combinator_unit_number,
+            entity.unit_number,
+            group_name,
+            section_data.multiplier or 1.0
+        )
     end
-
-    -- IMPORTANT: Reload sections after injection to get the updated list
-    local updated_sections = requester_point.sections
-
-    -- Apply multiplier to the newly created section
-    if section_index <= #updated_sections then
-        local logistic_section = updated_sections[section_index]
-        if logistic_section then
-            logistic_section.multiplier = multiplier
-        end
-    end
-
-    -- Track the injection by {group_name, multiplier} tuple
-    globals.track_injected_section(combinator_unit_number, entity.unit_number, group_name, multiplier)
 end
 
 --- Handle removal of a logistics group
+--- NOTE: This function is now a thin wrapper around the shared logistics_injection module
 --- @param combinator_unit_number number The combinator's unit number
 --- @param entity LuaEntity Target entity
 --- @param group_name string Name of the group to remove
 --- @param section_data table Section data with group and multiplier
 function logistics_combinator.remove_group(combinator_unit_number, entity, group_name, section_data)
-    if not entity or not entity.valid then
-        return  -- Entity destroyed
+    local success = logistics_injection.remove_group(
+        combinator_unit_number,
+        entity,
+        group_name,
+        section_data
+    )
+
+    if success then
+        -- Clear tracking
+        globals.remove_tracked_section(
+            combinator_unit_number,
+            entity.unit_number,
+            group_name,
+            section_data.multiplier or 1.0
+        )
     end
-
-    -- Check if entity has logistics capability
-    if not logistics_utils.supports_logistics_control(entity) then
-        return
-    end
-
-    local requester_point = entity.get_requester_point()
-    if not requester_point then
-        return
-    end
-
-    local sections = requester_point.sections
-    local multiplier = section_data.multiplier or 1.0
-
-    -- Find the LAST section matching {group_name, multiplier} tuple
-    local section_to_remove = nil
-    for i = #sections, 1, -1 do
-        local section = sections[i]
-        if section and section.group == group_name and section.multiplier == multiplier then
-            section_to_remove = i
-            break  -- Found the last match
-        end
-    end
-
-    if not section_to_remove then
-        -- Section doesn't exist (may have been manually removed by player)
-        -- Clear tracking for this tuple
-        globals.remove_tracked_section(combinator_unit_number, entity.unit_number, group_name, multiplier)
-        return
-    end
-
-    -- Remove the section
-    requester_point.remove_section(section_to_remove)
-
-    -- Clear tracking for this tuple
-    globals.remove_tracked_section(combinator_unit_number, entity.unit_number, group_name, multiplier)
 end
 
 --------------------------------------------------------------------------------
@@ -322,18 +223,25 @@ end
 --- @param unit_number number The combinator's unit number
 ---
 --- PERFORMANCE NOTE:
----   Reuses reconcile_sections() with should_inject=false to remove all tracked sections.
+---   Reuses reconciliation logic with empty desired_sections to remove all tracked sections.
 ---   This leverages cached connected_entities instead of searching all surfaces.
 ---   Limitation: If an entity was disconnected before combinator removal,
 ---   its injected sections will remain. This is an acceptable trade-off
 ---   to avoid catastrophic performance issues with large bases.
 function logistics_combinator.cleanup_injected_groups(unit_number)
-    -- Use existing reconciliation logic with should_inject=false
-    -- This removes all tracked sections from connected entities
-    logistics_combinator.reconcile_sections(unit_number, false)
+    local combinator_data = globals.get_logistics_combinator_data(unit_number)
+    if not combinator_data then
+        return
+    end
 
-    -- Clear all tracking
-    globals.clear_injected_tracking(unit_number)
+    -- Use shared cleanup logic
+    logistics_injection.cleanup_injected_groups(
+        unit_number,
+        combinator_data.connected_entities or {},
+        globals.get_injected_tracking(unit_number),
+        globals.remove_tracked_section,
+        globals.clear_injected_tracking
+    )
 end
 
 --------------------------------------------------------------------------------

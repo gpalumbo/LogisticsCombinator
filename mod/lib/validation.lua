@@ -41,8 +41,6 @@ local validation = {}
 
 -- Entity names that require validation
 local ENTITY_NAMES = {
-  MISSION_CONTROL = "mission-control-building",
-  RECEIVER_COMBINATOR = "receiver-combinator",
   LOGISTICS_COMBINATOR = "logistics-combinator"
 }
 

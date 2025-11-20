@@ -7,9 +7,6 @@ require("prototypes.technology.technologies")
 -- Load custom inputs (key bindings)
 require("prototypes.custom-input")
 
--- Load custom sprites
-require("prototypes.sprite")
-
 -- Load entity prototypes
 require("prototypes.entity.logistics_combinator")
 require("prototypes.entity.logistics_chooser_combinator")

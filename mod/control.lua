@@ -66,11 +66,6 @@ local function get_gui_module_for_event(event)
         elseif event.entity.name == "logistics-chooser-combinator" then
             return logistics_chooser_gui
         end
-        -- TODO: Add other entity types
-        -- elseif event.entity.name == "mission-control" then
-        --     return mission_control_gui
-        -- elseif event.entity.name == "receiver-combinator" then
-        --     return receiver_combinator_gui
     end
 
     -- For other events, check player's GUI state
@@ -82,11 +77,6 @@ local function get_gui_module_for_event(event)
             elseif gui_state.gui_type == "logistics_chooser" then
                 return logistics_chooser_gui
             end
-            -- TODO: Add other GUI types
-            -- elseif gui_state.gui_type == "mission_control" then
-            --     return mission_control_gui
-            -- elseif gui_state.gui_type == "receiver_combinator" then
-            --     return receiver_combinator_gui
         end
     end
 
@@ -141,6 +131,13 @@ script.on_event(defines.events.on_gui_checked_state_changed, function(event)
     local gui_module = get_gui_module_for_event(event)
     if gui_module and gui_module.on_gui_checked_state_changed then
         gui_module.on_gui_checked_state_changed(event)
+    end
+end)
+
+script.on_event(defines.events.on_gui_switch_state_changed, function(event)
+    local gui_module = get_gui_module_for_event(event)
+    if gui_module and gui_module.on_gui_switch_state_changed then
+        gui_module.on_gui_switch_state_changed(event)
     end
 end)
 

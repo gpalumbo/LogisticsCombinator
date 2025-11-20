@@ -6,6 +6,7 @@ local flib_gui = require("__flib__.gui")
 local gui_utils = require("lib.gui_utils")
 local gui_entity = require("lib.gui.gui_entity")
 local gui_circuit_inputs = require("lib.gui.gui_circuit_inputs")
+local circuit_utils = require("lib.circuit_utils")
 local globals = require("scripts.globals")
 
 local logistics_chooser_gui = {}
@@ -17,6 +18,7 @@ local GUI_NAMES = {
     DRAG_HANDLE = "logistics_chooser_drag_handle",
     CLOSE_BUTTON = "logistics_chooser_close",
     POWER_LABEL = "logistics_chooser_power",
+    MODE_SWITCH = "logistics_chooser_mode_switch",
     SIGNAL_GRID_FRAME = "logistics_chooser_signal_grid_frame",
     SIGNAL_GRID_TABLE = "logistics_chooser_signal_grid_table",
     GROUPS_FRAME = "logistics_chooser_groups_frame",
@@ -28,9 +30,10 @@ local GUI_NAMES = {
     SIGNAL_PICKER_PREFIX = "logistics_chooser_signal_picker_",
     OPERATOR_DROPDOWN_PREFIX = "logistics_chooser_operator_",
     VALUE_TEXTFIELD_PREFIX = "logistics_chooser_value_",
+    MULTIPLIER_PREFIX = "logistics_chooser_multiplier_",
+    STATUS_SPRITE_PREFIX = "logistics_chooser_status_",
     DELETE_GROUP_PREFIX = "logistics_chooser_delete_group_",
-    CONNECTED_ENTITIES_LABEL = "logistics_chooser_connected_count",
-    ACTIVE_GROUP_LABEL = "logistics_chooser_active_group"
+    CONNECTED_ENTITIES_LABEL = "logistics_chooser_connected_count"
 }
 
 -- ============================================================================
@@ -73,6 +76,79 @@ local function get_groups_table(player)
     return scroll[GUI_NAMES.GROUPS_TABLE]
 end
 
+--- Evaluate all group conditions and update status indicators
+--- @param player LuaPlayer
+--- @param chooser_data table The chooser data
+--- @param entity LuaEntity The chooser entity
+local function evaluate_and_update_statuses(player, chooser_data, entity)
+    if not chooser_data.groups or #chooser_data.groups == 0 then return end
+
+    local groups_table = get_groups_table(player)
+    if not groups_table then return end
+
+    -- Get circuit signals using circuit_utils
+    local input_signals = circuit_utils.get_input_signals(entity, "combinator_input")
+    if not input_signals then
+        input_signals = {red = {}, green = {}}
+    end
+
+    -- Convert signal arrays to tables for evaluation
+    local red_signals = {}
+    local green_signals = {}
+
+    for _, sig_data in ipairs(input_signals.red or {}) do
+        if sig_data.signal_id then
+            local key = gui_utils.get_signal_key(sig_data.signal_id)
+            red_signals[key] = sig_data.count
+        end
+    end
+
+    for _, sig_data in ipairs(input_signals.green or {}) do
+        if sig_data.signal_id then
+            local key = gui_utils.get_signal_key(sig_data.signal_id)
+            green_signals[key] = sig_data.count
+        end
+    end
+
+    -- Evaluate each group's condition
+    for i, group in ipairs(chooser_data.groups) do
+        local is_active = false
+
+        if group.condition then
+            -- Evaluate the condition using gui_utils
+            -- Note: We pass an array with a single condition since each group has one condition
+            is_active = gui_utils.evaluate_complex_conditions(
+                {group.condition},
+                red_signals,
+                green_signals
+            )
+        end
+
+        -- Update the group's is_active state
+        group.is_active = is_active
+
+        -- Update the GUI sprite (navigate to correct location in hierarchy)
+        -- Structure: groups_table -> row_container -> top_row (first child) -> status_sprite
+        local row_container = groups_table[GUI_NAMES.GROUP_ROW_PREFIX .. i]
+        if row_container and row_container.valid then
+            -- The status_sprite is in the top_row, which is the first child of row_container
+            local top_row = row_container.children[1]
+            if top_row and top_row.valid then
+                local status_sprite = top_row[GUI_NAMES.STATUS_SPRITE_PREFIX .. i]
+                if status_sprite and status_sprite.valid then
+                    status_sprite.sprite = is_active and "utility/status_working" or "utility/status_not_working"
+                    status_sprite.tooltip = is_active and "Condition TRUE - Group active" or "Condition FALSE - Group inactive"
+                end
+            end
+        end
+    end
+
+    -- Store updated group states
+    for i, group in ipairs(chooser_data.groups) do
+        globals.update_chooser_group(entity.unit_number, i, group)
+    end
+end
+
 -- ============================================================================
 -- GUI ELEMENT CREATION HELPERS (must be before handlers that use them)
 -- ============================================================================
@@ -80,19 +156,51 @@ end
 --- Create a single group selection row
 --- @param parent LuaGuiElement The parent table element
 --- @param group_index number The index of this group
---- @param group_data table The group data {group, signal, operator, value}
+--- @param group_data table The group data {group, condition, multiplier, is_active}
 --- @param force LuaForce The force to get logistics groups from
 local function create_group_row(parent, group_index, group_data, force)
-    group_data = group_data or {group = nil, signal = nil, operator = "=", value = 0}
+    group_data = group_data or {
+        group = nil,
+        condition = {
+            left_wire_filter = "both",  -- "red", "green", "both", or "none"
+            left_signal = nil,
+            operator = "=",
+            right_type = "constant",
+            right_value = 0,
+            right_signal = nil,
+            right_wire_filter = "both"  -- "red", "green", "both", or "none"
+        },
+        multiplier = 1.0,
+        is_active = false
+    }
 
-    local row = parent.add{
+    -- Main row container
+    local row_container = parent.add{
         type = "flow",
         name = GUI_NAMES.GROUP_ROW_PREFIX .. group_index,
+        direction = "vertical"
+    }
+    row_container.style.bottom_margin = 8
+
+    -- Top row: Group selector and multiplier
+    local top_row = row_container.add{
+        type = "flow",
         direction = "horizontal"
     }
-    row.style.vertical_align = "center"
-    row.style.horizontal_spacing = 8
-    row.style.bottom_margin = 4
+    top_row.style.vertical_align = "center"
+    top_row.style.horizontal_spacing = 8
+
+    -- Status indicator LED (shows if condition is currently true/false)
+    local status_sprite = top_row.add{
+        type = "sprite",
+        name = GUI_NAMES.STATUS_SPRITE_PREFIX .. group_index,
+        sprite = group_data.is_active and "utility/status_working" or "utility/status_not_working",
+        tooltip = group_data.is_active and "Condition TRUE - Group active" or "Condition FALSE - Group inactive"
+    }
+    status_sprite.style.width = 16
+    status_sprite.style.height = 16
+    status_sprite.style.stretch_image_to_widget_size = true
+    status_sprite.style.right_margin = 4
 
     -- Get logistics groups from force
     local logistic_groups = force.get_logistic_groups() or {}
@@ -115,7 +223,7 @@ local function create_group_row(parent, group_index, group_data, force)
     end
 
     -- Group dropdown selector
-    local group_dropdown = row.add{
+    local group_dropdown = top_row.add{
         type = "drop-down",
         name = GUI_NAMES.GROUP_PICKER_PREFIX .. group_index,
         items = dropdown_items,
@@ -125,54 +233,35 @@ local function create_group_row(parent, group_index, group_data, force)
     group_dropdown.style.width = 200
     group_dropdown.style.horizontally_stretchable = false
 
-    -- "When" label
-    local when_label = row.add{
+    -- Multiplier label
+    local mult_label = top_row.add{
         type = "label",
-        caption = "when"
+        caption = "X"
     }
-    when_label.style.left_margin = 8
-    when_label.style.right_margin = 4
+    mult_label.style.font = "default-bold"
+    mult_label.style.left_margin = 8
+    mult_label.style.right_margin = 2
 
-    -- Signal picker
-    local signal_picker = row.add{
-        type = "choose-elem-button",
-        name = GUI_NAMES.SIGNAL_PICKER_PREFIX .. group_index,
-        elem_type = "signal",
-        signal = group_data.signal,
-        tooltip = "Signal to check"
-    }
-    signal_picker.style.width = 40
-    signal_picker.style.height = 40
-
-    -- Operator dropdown
-    local operator_items = {"<", ">", "=", "≠", "≤", "≥"}
-    local operator_index = gui_utils.get_index_from_operator(group_data.operator or "=")
-
-    local operator_dropdown = row.add{
-        type = "drop-down",
-        name = GUI_NAMES.OPERATOR_DROPDOWN_PREFIX .. group_index,
-        items = operator_items,
-        selected_index = operator_index,
-        tooltip = "Comparison operator"
-    }
-    operator_dropdown.style.width = 50
-    operator_dropdown.style.left_margin = 4
-    operator_dropdown.style.right_margin = 4
-
-    -- Value textfield
-    local value_textfield = row.add{
+    -- Multiplier textfield
+    local mult_textfield = top_row.add{
         type = "textfield",
-        name = GUI_NAMES.VALUE_TEXTFIELD_PREFIX .. group_index,
-        text = tostring(group_data.value or 0),
+        name = GUI_NAMES.MULTIPLIER_PREFIX .. group_index,
+        text = tostring(group_data.multiplier or 1.0),
         numeric = true,
-        allow_decimal = false,
-        tooltip = "Value to match"
+        allow_decimal = true,
+        tooltip = "Multiplier for group quantities"
     }
-    value_textfield.style.width = 80
-    value_textfield.style.horizontal_align = "center"
+    mult_textfield.style.width = 60
+    mult_textfield.style.horizontal_align = "center"
+
+    -- Spacer
+    local spacer = top_row.add{
+        type = "empty-widget"
+    }
+    spacer.style.horizontally_stretchable = true
 
     -- Delete button
-    local delete_button = row.add{
+    local delete_button = top_row.add{
         type = "sprite-button",
         name = GUI_NAMES.DELETE_GROUP_PREFIX .. group_index,
         sprite = "utility/close",
@@ -181,9 +270,29 @@ local function create_group_row(parent, group_index, group_data, force)
     }
     delete_button.style.width = 24
     delete_button.style.height = 24
-    delete_button.style.left_margin = 8
 
-    return row
+    -- Bottom row: Condition using shared component
+    local condition_container = row_container.add{
+        type = "flow",
+        direction = "horizontal"
+    }
+    condition_container.style.left_padding = 60  -- Indent condition row
+    condition_container.style.horizontal_spacing = 4
+
+    -- "When" label
+    condition_container.add{
+        type = "label",
+        caption = "when"
+    }
+
+    -- Create condition row using shared component (always treat as "first" - no AND/OR)
+    local condition_table = condition_container.add{
+        type = "table",
+        column_count = 1
+    }
+    gui_utils.create_condition_row(condition_table, group_index, group_data.condition, true)
+
+    return row_container
 end
 
 -- ============================================================================
@@ -206,12 +315,20 @@ local gui_handlers = {
         local chooser_data, entity = get_chooser_data_from_player(player)
         if not chooser_data then return end
 
-        -- Create new group selection
+        -- Create new group selection with full condition structure
         local new_group = {
             group = nil,          -- Logistics group name
-            signal = nil,         -- Signal to check
-            operator = "=",       -- Comparison operator
-            value = 0             -- Value to match
+            condition = {
+                left_wire_filter = "both",  -- "red", "green", "both", or "none"
+                left_signal = nil,
+                operator = "=",
+                right_type = "constant",
+                right_value = 0,
+                right_signal = nil,
+                right_wire_filter = "both"  -- "red", "green", "both", or "none"
+            },
+            multiplier = 1.0,     -- Quantity multiplier
+            is_active = false     -- Condition evaluation result
         }
 
         -- Add to storage
@@ -348,34 +465,13 @@ local function create_groups_panel(parent, entity)
     add_button.style.top_margin = 8
     add_button.style.horizontally_stretchable = true
 
-    -- Active group indicator
-    local active_flow = frame.add{
-        type = "flow",
-        direction = "horizontal"
-    }
-    active_flow.style.top_margin = 12
-    active_flow.style.vertical_align = "center"
-
-    active_flow.add{
-        type = "label",
-        caption = "Active group: "
-    }
-    active_flow.style.font = "default-semibold"
-
-    local active_label = active_flow.add{
-        type = "label",
-        name = GUI_NAMES.ACTIVE_GROUP_LABEL,
-        caption = "<none>"
-    }
-    active_label.style.font_color = {r = 0.5, g = 1.0, b = 0.5}
-
     -- Connected entities count
     local connected_label = frame.add{
         type = "label",
         name = GUI_NAMES.CONNECTED_ENTITIES_LABEL,
         caption = "Connected entities: 0"
     }
-    connected_label.style.top_margin = 4
+    connected_label.style.top_margin = 12
     connected_label.style.font_color = {r = 0.7, g = 0.7, b = 0.7}
 
     return frame
@@ -436,7 +532,7 @@ function logistics_chooser_gui.create_gui(player, entity)
                 style = "inside_shallow_frame",
                 direction = "vertical",
                 children = {
-                    -- Power status
+                    -- Power status and mode switch
                     {
                         type = "flow",
                         direction = "horizontal",
@@ -461,7 +557,25 @@ function logistics_chooser_gui.create_gui(player, entity)
                             {
                                 type = "label",
                                 name = GUI_NAMES.POWER_LABEL,
-                                caption = gui_entity.get_power_status(entity).text
+                                caption = gui_entity.get_power_status(entity).text,
+                                style_mods = {
+                                    right_margin = 16
+                                }
+                            },
+                            {
+                                type = "label",
+                                caption = "Mode: ",
+                                style_mods = {
+                                    left_margin = 8
+                                }
+                            },
+                            {
+                                type = "switch",
+                                name = GUI_NAMES.MODE_SWITCH,
+                                left_label_caption = "Each",
+                                right_label_caption = "First Only",
+                                switch_state = "left",  -- Default to "Each", will be updated below
+                                tooltip = {"gui.logistics-chooser-mode-tooltip"}
                             }
                         }
                     }
@@ -478,6 +592,17 @@ function logistics_chooser_gui.create_gui(player, entity)
 
     -- Add signal grid
     create_signal_grid(content_frame, entity)
+
+    -- Initialize mode switch state from storage
+    local chooser_data = globals.get_logistics_chooser_data(entity.unit_number)
+    if chooser_data then
+        local mode_switch = refs[GUI_NAMES.MAIN_FRAME][GUI_NAMES.MODE_SWITCH]
+        if mode_switch and mode_switch.valid then
+            -- Default mode is "each"
+            local mode = chooser_data.mode or "each"
+            mode_switch.switch_state = (mode == "first_only") and "right" or "left"
+        end
+    end
 
     -- Center the window
     refs[GUI_NAMES.MAIN_FRAME].auto_center = true
@@ -526,7 +651,9 @@ function logistics_chooser_gui.update_gui(player)
         create_signal_grid(content_frame, entity, signal_grid_frame)
     end
 
-    -- TODO: Update active group indicator
+    -- Evaluate conditions and update status indicators
+    evaluate_and_update_statuses(player, chooser_data, entity)
+
     -- TODO: Update connected entities count
 end
 
@@ -612,6 +739,54 @@ function logistics_chooser_gui.on_gui_click(event)
         gui_handlers.chooser_delete_group(event)
         return
     end
+
+    -- Handle right type toggle (from condition row)
+    if element.name:match("^cond_%d+_right_type_toggle$") then
+        local player = game.get_player(event.player_index)
+        if not player then return end
+
+        local group_index = tonumber(element.name:match("^cond_(%d+)_right_type_toggle$"))
+        if not group_index then return end
+
+        local chooser_data, entity = get_chooser_data_from_player(player)
+        if not chooser_data or not chooser_data.groups[group_index] then return end
+
+        -- Toggle type
+        local condition = chooser_data.groups[group_index].condition
+        condition.right_type = (condition.right_type == "constant") and "signal" or "constant"
+        globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+
+        -- Update GUI visibility
+        local is_signal_mode = (condition.right_type == "signal")
+
+        -- Find the parent condition row
+        local condition_row = element.parent
+        if condition_row and condition_row.valid then
+            -- Update toggle button sprite and tooltip
+            element.sprite = is_signal_mode and "utility/custom_tag_icon" or "utility/slot"
+            element.tooltip = is_signal_mode and {"gui.switch-to-constant"} or {"gui.switch-to-signal"}
+
+            -- Update visibility of right value/signal elements
+            local right_value = condition_row["cond_" .. group_index .. "_right_value"]
+            local right_signal = condition_row["cond_" .. group_index .. "_right_signal"]
+            local right_wire_filter = condition_row["cond_" .. group_index .. "_right_wire_"]
+
+            if right_value and right_value.valid then
+                right_value.visible = not is_signal_mode
+            end
+            if right_signal and right_signal.valid then
+                right_signal.visible = is_signal_mode
+            end
+            if right_wire_filter and right_wire_filter.valid then
+                right_wire_filter.visible = is_signal_mode
+            end
+        end
+
+        -- Re-evaluate conditions
+        evaluate_and_update_statuses(player, chooser_data, entity)
+
+        return
+    end
 end
 
 --- Handle GUI element changed events
@@ -625,12 +800,39 @@ function logistics_chooser_gui.on_gui_elem_changed(event)
     local chooser_data, entity = get_chooser_data_from_player(player)
     if not chooser_data then return end
 
-    -- Handle signal picker changed
-    local signal_index = element.name:match("^" .. GUI_NAMES.SIGNAL_PICKER_PREFIX .. "(%d+)$")
-    if signal_index then
-        local group_index = tonumber(signal_index)
+    -- Handle left signal changed (from condition row)
+    local left_signal_index = element.name:match("^cond_(%d+)_left_signal$")
+    if left_signal_index then
+        local group_index = tonumber(left_signal_index)
         if chooser_data.groups and chooser_data.groups[group_index] then
-            chooser_data.groups[group_index].signal = element.elem_value
+            chooser_data.groups[group_index].condition.left_signal = element.elem_value
+            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+            -- Re-evaluate conditions
+            evaluate_and_update_statuses(player, chooser_data, entity)
+        end
+        return
+    end
+
+    -- Handle right signal changed (from condition row)
+    local right_signal_index = element.name:match("^cond_(%d+)_right_signal$")
+    if right_signal_index then
+        local group_index = tonumber(right_signal_index)
+        if chooser_data.groups and chooser_data.groups[group_index] then
+            chooser_data.groups[group_index].condition.right_signal = element.elem_value
+            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+            -- Re-evaluate conditions
+            evaluate_and_update_statuses(player, chooser_data, entity)
+        end
+        return
+    end
+
+    -- Handle group picker changed
+    local group_picker_index = element.name:match("^" .. GUI_NAMES.GROUP_PICKER_PREFIX .. "(%d+)$")
+    if group_picker_index then
+        local group_index = tonumber(group_picker_index)
+        if chooser_data.groups and chooser_data.groups[group_index] then
+            local selected_item = element.items and element.items[element.selected_index]
+            chooser_data.groups[group_index].group = (selected_item == "<none>") and nil or selected_item
             globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
         end
         return
@@ -648,12 +850,28 @@ function logistics_chooser_gui.on_gui_text_changed(event)
     local chooser_data, entity = get_chooser_data_from_player(player)
     if not chooser_data then return end
 
-    -- Handle value textfield changed
-    local value_index = element.name:match("^" .. GUI_NAMES.VALUE_TEXTFIELD_PREFIX .. "(%d+)$")
-    if value_index then
-        local group_index = tonumber(value_index)
+    -- Handle right value changed (from condition row)
+    local right_value_index = element.name:match("^cond_(%d+)_right_value$")
+    if right_value_index then
+        local group_index = tonumber(right_value_index)
         if chooser_data.groups and chooser_data.groups[group_index] then
-            chooser_data.groups[group_index].value = tonumber(element.text) or 0
+            chooser_data.groups[group_index].condition.right_value = tonumber(element.text) or 0
+            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+            -- Re-evaluate conditions
+            evaluate_and_update_statuses(player, chooser_data, entity)
+        end
+        return
+    end
+
+    -- Handle multiplier changed
+    local mult_index = element.name:match("^" .. GUI_NAMES.MULTIPLIER_PREFIX .. "(%d+)$")
+    if mult_index then
+        local group_index = tonumber(mult_index)
+        if chooser_data.groups and chooser_data.groups[group_index] then
+            local multiplier = tonumber(element.text) or 1.0
+            -- Ensure multiplier is non-negative
+            if multiplier < 0 then multiplier = 0 end
+            chooser_data.groups[group_index].multiplier = multiplier
             globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
         end
         return
@@ -671,25 +889,114 @@ function logistics_chooser_gui.on_gui_selection_state_changed(event)
     local chooser_data, entity = get_chooser_data_from_player(player)
     if not chooser_data then return end
 
-    -- Handle group picker changed
-    local picker_index = element.name:match("^" .. GUI_NAMES.GROUP_PICKER_PREFIX .. "(%d+)$")
-    if picker_index then
-        local group_index = tonumber(picker_index)
+    -- Handle operator dropdown changed (from condition row)
+    local operator_index = element.name:match("^cond_(%d+)_operator$")
+    if operator_index then
+        local group_index = tonumber(operator_index)
         if chooser_data.groups and chooser_data.groups[group_index] then
-            local selected_item = element.items[element.selected_index]
+            chooser_data.groups[group_index].condition.operator = gui_utils.get_operator_from_index(element.selected_index)
+            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+            -- Re-evaluate conditions
+            evaluate_and_update_statuses(player, chooser_data, entity)
+        end
+        return
+    end
+
+    -- Handle group picker changed (top row dropdown)
+    local group_picker_index = element.name:match("^" .. GUI_NAMES.GROUP_PICKER_PREFIX .. "(%d+)$")
+    if group_picker_index then
+        local group_index = tonumber(group_picker_index)
+        if chooser_data.groups and chooser_data.groups[group_index] then
+            local selected_item = element.items and element.items[element.selected_index]
             chooser_data.groups[group_index].group = (selected_item == "<none>") and nil or selected_item
             globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
         end
         return
     end
+end
 
-    -- Handle operator dropdown changed
-    local operator_index = element.name:match("^" .. GUI_NAMES.OPERATOR_DROPDOWN_PREFIX .. "(%d+)$")
-    if operator_index then
-        local group_index = tonumber(operator_index)
-        if chooser_data.groups and chooser_data.groups[group_index] then
-            chooser_data.groups[group_index].operator = gui_utils.get_operator_from_index(element.selected_index)
+--- Handle GUI switch state changed events (for mode switch)
+--- @param event EventData.on_gui_switch_state_changed
+function logistics_chooser_gui.on_gui_switch_state_changed(event)
+    local element = event.element
+    if not element or not element.valid then return end
+
+    -- Handle mode switch
+    if element.name == GUI_NAMES.MODE_SWITCH then
+        local player = game.get_player(event.player_index)
+        if not player then return end
+
+        local chooser_data, entity = get_chooser_data_from_player(player)
+        if not chooser_data then return end
+
+        -- Left = "Each" (false/left), Right = "First Only" (true/right)
+        -- switch_state: "left" or "right"
+        local mode = (element.switch_state == "right") and "first_only" or "each"
+
+        -- Store mode in chooser data (this directly updates storage since chooser_data is a reference)
+        chooser_data.mode = mode
+
+        return
+    end
+end
+
+--- Handle GUI checked state changed events (for wire filter checkboxes)
+--- @param event EventData.on_gui_checked_state_changed
+function logistics_chooser_gui.on_gui_checked_state_changed(event)
+    local element = event.element
+    if not element or not element.valid then return end
+    local player = game.get_player(event.player_index)
+    if not player then return end
+
+    local chooser_data, entity = get_chooser_data_from_player(player)
+    if not chooser_data then return end
+
+    -- Handle left wire filter checkboxes
+    local left_wire_index = element.name:match("^cond_(%d+)_left_wire_[rg]ed$")
+    if left_wire_index then
+        local group_index = tonumber(left_wire_index)
+        if not chooser_data.groups or not chooser_data.groups[group_index] then return end
+
+        -- Find both checkboxes to determine filter value
+        -- Structure: checkbox -> checkbox_panel (flow) -> filter_flow -> condition_row
+        -- The filter_flow has the checkboxes as named children
+        local filter_flow = element.parent.parent
+        if not filter_flow then return end
+
+        local red_checkbox = filter_flow["cond_" .. group_index .. "_left_wire_red"]
+        local green_checkbox = filter_flow["cond_" .. group_index .. "_left_wire_green"]
+
+        if red_checkbox and green_checkbox then
+            local filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
+            chooser_data.groups[group_index].condition.left_wire_filter = filter
             globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+            -- Re-evaluate conditions
+            evaluate_and_update_statuses(player, chooser_data, entity)
+        end
+        return
+    end
+
+    -- Handle right wire filter checkboxes
+    local right_wire_index = element.name:match("^cond_(%d+)_right_wire_[rg]ed$")
+    if right_wire_index then
+        local group_index = tonumber(right_wire_index)
+        if not chooser_data.groups or not chooser_data.groups[group_index] then return end
+
+        -- Find both checkboxes
+        -- Structure: checkbox -> checkbox_panel (flow) -> filter_flow -> condition_row
+        -- The filter_flow has the checkboxes as named children
+        local filter_flow = element.parent.parent
+        if not filter_flow then return end
+
+        local red_checkbox = filter_flow["cond_" .. group_index .. "_right_wire_red"]
+        local green_checkbox = filter_flow["cond_" .. group_index .. "_right_wire_green"]
+
+        if red_checkbox and green_checkbox then
+            local filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
+            chooser_data.groups[group_index].condition.right_wire_filter = filter
+            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+            -- Re-evaluate conditions
+            evaluate_and_update_statuses(player, chooser_data, entity)
         end
         return
     end
