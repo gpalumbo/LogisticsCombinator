@@ -122,14 +122,8 @@ function logistics_combinator_control.register_events()
     -- Wire events don't exist in Factorio API - use polling instead
     -- Connection changes are detected by periodic polling in on_nth_tick(90)
 
-    -- GUI events
-    script.on_event(defines.events.on_gui_opened, logistics_combinator_gui.on_gui_opened)
-    script.on_event(defines.events.on_gui_closed, logistics_combinator_gui.on_gui_closed)
-    script.on_event(defines.events.on_gui_click, logistics_combinator_gui.on_gui_click)
-    script.on_event(defines.events.on_gui_elem_changed, logistics_combinator_gui.on_gui_elem_changed)
-    script.on_event(defines.events.on_gui_text_changed, logistics_combinator_gui.on_gui_text_changed)
-    script.on_event(defines.events.on_gui_selection_state_changed, logistics_combinator_gui.on_gui_selection_state_changed)
-    script.on_event(defines.events.on_gui_checked_state_changed, logistics_combinator_gui.on_gui_checked_state_changed)
+    -- NOTE: GUI events are registered centrally in control.lua to avoid conflicts
+    -- The central dispatcher routes events based on entity type and player GUI state
 
     -- Periodic connection update (every 90 ticks = 1.5 seconds)
     -- Detects wire changes via polling (no native wire events available)

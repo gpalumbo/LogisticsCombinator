@@ -68,6 +68,27 @@ function globals_module.init_globals()
     }
     ]]
 
+    -- Logistics chooser combinator state
+    storage.logistics_choosers = storage.logistics_choosers or {}
+    --[[
+    Structure:
+    [chooser_unit_number] = {
+        entity = entity_reference,
+        groups = {  -- Array of group selections
+            {
+                group = "group-name",  -- Logistics group name
+                signal = {type="item", name="iron-plate"},  -- Signal to check
+                operator = "=",  -- Comparison operator (<, >, =, ≠, ≤, ≥)
+                value = 100,  -- Value to match
+                multiplier = 1.0,  -- Quantity multiplier for group
+                is_active = false  -- Condition evaluation result (updated during processing)
+            }
+        },
+        active_group = nil,  -- Currently active group name
+        connected_entities = {}  -- cached unit_numbers
+    }
+    ]]
+
     -- Player GUI states
     storage.player_gui_states = storage.player_gui_states or {}
     --[[
@@ -459,6 +480,249 @@ function globals_module.get_last_condition_state(unit_number)
     end
 
     return false
+end
+
+-- ============================================================================
+-- LOGISTICS CHOOSER COMBINATOR FUNCTIONS
+-- ============================================================================
+
+--- Register a logistics chooser combinator
+--- @param entity LuaEntity The chooser combinator entity
+function globals_module.register_logistics_chooser(entity)
+    if not entity or not entity.valid then return end
+
+    if not storage.logistics_choosers then
+        storage.logistics_choosers = {}
+    end
+
+    storage.logistics_choosers[entity.unit_number] = {
+        entity = entity,
+        groups = {},  -- Array of {group, condition, multiplier, is_active}
+        active_group = nil,  -- Currently active group name
+        connected_entities = {}
+    }
+end
+
+--- Unregister a logistics chooser combinator
+--- @param unit_number number The chooser's unit number
+function globals_module.unregister_logistics_chooser(unit_number)
+    if not storage.logistics_choosers then
+        return
+    end
+
+    storage.logistics_choosers[unit_number] = nil
+end
+
+--- Get logistics chooser data
+--- @param unit_number number The chooser's unit number
+--- @return table|nil Chooser data or nil if not found
+function globals_module.get_logistics_chooser_data(unit_number)
+    if not storage.logistics_choosers then
+        return nil
+    end
+
+    return storage.logistics_choosers[unit_number]
+end
+
+--- Add a group to a chooser
+--- @param unit_number number The chooser's unit number
+--- @param group table The group to add {group = "name", signal = {...}, value = 0}
+function globals_module.add_chooser_group(unit_number, group)
+    if not storage.logistics_choosers then
+        return
+    end
+
+    local data = storage.logistics_choosers[unit_number]
+    if data then
+        if not data.groups then
+            data.groups = {}
+        end
+        table.insert(data.groups, group)
+    end
+end
+
+--- Remove a group from a chooser
+--- @param unit_number number The chooser's unit number
+--- @param group_index number Index of the group to remove
+function globals_module.remove_chooser_group(unit_number, group_index)
+    if not storage.logistics_choosers then
+        return
+    end
+
+    local data = storage.logistics_choosers[unit_number]
+    if data and data.groups and data.groups[group_index] then
+        table.remove(data.groups, group_index)
+    end
+end
+
+--- Update a group in a chooser
+--- @param unit_number number The chooser's unit number
+--- @param group_index number Index of the group to update
+--- @param group table The updated group data
+function globals_module.update_chooser_group(unit_number, group_index, group)
+    if not storage.logistics_choosers then
+        return
+    end
+
+    local data = storage.logistics_choosers[unit_number]
+    if data and data.groups and data.groups[group_index] then
+        data.groups[group_index] = group
+    end
+end
+
+--- Get all groups from a chooser
+--- @param unit_number number The chooser's unit number
+--- @return table Array of groups
+function globals_module.get_chooser_groups(unit_number)
+    if not storage.logistics_choosers then
+        return {}
+    end
+
+    local data = storage.logistics_choosers[unit_number]
+    if data and data.groups then
+        return data.groups
+    end
+
+    return {}
+end
+
+--- Set the active group for a chooser
+--- @param unit_number number The chooser's unit number
+--- @param group_name string|nil The active group name (nil for none)
+function globals_module.set_active_chooser_group(unit_number, group_name)
+    if not storage.logistics_choosers then
+        return
+    end
+
+    local data = storage.logistics_choosers[unit_number]
+    if data then
+        data.active_group = group_name
+    end
+end
+
+--- Get the active group for a chooser
+--- @param unit_number number The chooser's unit number
+--- @return string|nil The active group name
+function globals_module.get_active_chooser_group(unit_number)
+    if not storage.logistics_choosers then
+        return nil
+    end
+
+    local data = storage.logistics_choosers[unit_number]
+    if data then
+        return data.active_group
+    end
+
+    return nil
+end
+
+--------------------------------------------------------------------------------
+-- CHOOSER INJECTION TRACKING
+--------------------------------------------------------------------------------
+
+--- Track an injected logistics section for a chooser
+--- @param chooser_unit_number number The chooser's unit number
+--- @param entity_unit_number number The target entity's unit number
+--- @param group_name string The group name
+--- @param multiplier number The multiplier
+function globals_module.track_chooser_injection(chooser_unit_number, entity_unit_number, group_name, multiplier)
+    if not storage.logistics_choosers then
+        return
+    end
+
+    local data = storage.logistics_choosers[chooser_unit_number]
+    if data then
+        if not data.injected_tracking then
+            data.injected_tracking = {}
+        end
+        if not data.injected_tracking[entity_unit_number] then
+            data.injected_tracking[entity_unit_number] = {sections = {}}
+        end
+
+        -- Get reference to entity tracking
+        local entity_tracking = data.injected_tracking[entity_unit_number]
+
+        -- Check if this tuple already exists
+        local exists = false
+        for _, section in ipairs(entity_tracking.sections) do
+            if section.group == group_name and section.multiplier == multiplier then
+                exists = true
+                break
+            end
+        end
+
+        -- Only add if not already tracked
+        if not exists then
+            table.insert(entity_tracking.sections, {
+                group = group_name,
+                multiplier = multiplier
+            })
+        end
+    end
+end
+
+--- Clear all injected tracking for a chooser
+--- @param chooser_unit_number number The chooser's unit number
+function globals_module.clear_chooser_tracking(chooser_unit_number)
+    if not storage.logistics_choosers then
+        return
+    end
+
+    local data = storage.logistics_choosers[chooser_unit_number]
+    if data then
+        data.injected_tracking = {}
+    end
+end
+
+--- Remove a tracked section tuple for a specific entity
+--- @param chooser_unit_number number The chooser
+--- @param entity_unit_number number The entity
+--- @param group_name string The group name
+--- @param multiplier number The multiplier
+function globals_module.remove_chooser_tracking(chooser_unit_number, entity_unit_number, group_name, multiplier)
+    if not storage.logistics_choosers then
+        return
+    end
+
+    local data = storage.logistics_choosers[chooser_unit_number]
+    if not data or not data.injected_tracking then
+        return
+    end
+
+    local entity_tracking = data.injected_tracking[entity_unit_number]
+    if not entity_tracking or not entity_tracking.sections then
+        return
+    end
+
+    -- Find and remove the matching tuple
+    for i = #entity_tracking.sections, 1, -1 do
+        local section = entity_tracking.sections[i]
+        if section.group == group_name and section.multiplier == multiplier then
+            table.remove(entity_tracking.sections, i)
+            break  -- Only remove first match
+        end
+    end
+
+    -- Clean up empty tracking
+    if #entity_tracking.sections == 0 then
+        data.injected_tracking[entity_unit_number] = nil
+    end
+end
+
+--- Get injection tracking for a chooser
+--- @param chooser_unit_number number The chooser's unit number
+--- @return table Tracking data {[entity_id] = {sections = {{group, multiplier}, ...}}}
+function globals_module.get_chooser_tracking(chooser_unit_number)
+    if not storage.logistics_choosers then
+        return {}
+    end
+
+    local data = storage.logistics_choosers[chooser_unit_number]
+    if data and data.injected_tracking then
+        return data.injected_tracking
+    end
+
+    return {}
 end
 
 -- TODO: Add Mission Control network functions
