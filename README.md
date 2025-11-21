@@ -7,6 +7,10 @@ The Logistics Chooser Combinator switches between predefined logistics groups.
 
 This mod doesn't allow for changing the definition of a named logistics group as that breaks the limitations on immediate planet to planet communications. That will be a different mod. 
 
+## Inspiration 
+
+I have a buffer ship flying between planets.  I wanted a way to conditionally turn on/off standard request packages (eg. Rocket parts, silo construction materials, robots and robo parts) as conditions are met in the logistics networks.
+
 ## Features
 
 - **Two specialized combinators** for circuit-controlled logistics
