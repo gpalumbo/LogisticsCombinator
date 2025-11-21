@@ -110,7 +110,7 @@ None currently reported. Please report issues on the mod portal or GitHub.
 
 ## License
 
-This mod is licensed under the MIT License. See LICENSE file for details.
+This mod is licensed under the Apache License 2.0. See LICENSE file for details.
 
 ## Changelog
 
