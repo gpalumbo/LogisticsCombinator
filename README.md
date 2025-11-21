@@ -1,10 +1,11 @@
 # Logistics Combinator
 
-A Factorio 2.0+ mod that enables dynamic logistics automation through circuit-controlled combinators. Control your logistics requests programmatically by injecting and removing logistics groups based on circuit network conditions.
+Named logistics groups provide a mechanism to reuse complex requests. This mod effectively allows you to turn these named groups on or off based on circuit conditions.   
 
-## Metadata Description
+The Logistics Combinator dynamically injects/removes named logistics groups when circuit conditions are met.
+The Logistics Chooser Combinator switches between predefined logistics groups.
 
-Control logistics requests with circuit networks! This mod adds two powerful combinators: the Logistics Combinator dynamically injects/removes logistics groups when circuit conditions are met, while the Logistics Chooser Combinator switches between predefined logistics configurations. Perfect for adaptive space platforms, conditional mining outposts, and smart mall systems that respond to your factory's needs in real-time.
+This mod doesn't allow for changing the definition of a named logistics group as that breaks the limitations on immediate planet to planet communications. That will be a different mod. 
 
 ## Features
 
@@ -31,7 +32,7 @@ The **Logistics Combinator** dynamically injects and removes logistics groups ba
 
 **Use cases:**
 - **Conditional logistics requests**: Request fuel only when low
-- **Dynamic platform requests**: Adjust cargo landing pad requests based on current inventory
+- **Dynamic platform requests**: Adjust cargo landing pad requests based on logistics request.  
 - **Smart mining outposts**: Request different ore types based on circuit signals
 - **Adaptive manufacturing**: Change assembler requests based on production needs
 
@@ -55,8 +56,6 @@ The **Logistics Chooser Combinator** selects and applies logistics groups from a
 **Use cases:**
 - **Multi-mode platforms**: Switch between different space platform configurations
 - **Flexible outposts**: Toggle between mining, building, and maintenance logistics
-- **State machines**: Implement complex logistics state machines with priority logic
-- **Recipe switching**: Change assembler requests based on production mode signals
 
 **Example (First Only mode)**:
 - Priority 1: "Emergency Supplies" when `Emergency-signal = 1`
@@ -64,13 +63,6 @@ The **Logistics Chooser Combinator** selects and applies logistics groups from a
 - Priority 3: "Normal Operations" when `Always-on = 1`
 
 Only the highest-priority active group is applied.
-
-## Installation
-
-1. Download the latest release
-2. Extract to your Factorio mods folder: `%appdata%/Factorio/mods` (Windows) or `~/.factorio/mods` (Linux/Mac)
-3. Enable the mod in-game
-4. Research **Logistics Circuit Control** technology to unlock the combinators
 
 ## Technology Requirements
 
