@@ -11,6 +11,7 @@ local gui_utils = require("lib.gui_utils")
 
 -- Import script modules (stateful)
 local globals = require("scripts.globals")
+local migrations = require("scripts.migrations")
 
 -- Import logistics combinator modules
 local logistics_combinator = require("scripts.logistics_combinator.logistics_combinator")
@@ -43,13 +44,28 @@ end)
 
 -- Handle configuration changes (mod updates, etc.)
 script.on_configuration_changed(function(event)
-    globals.init_globals()  -- Ensure globals are properly structured
+    -- Get version information
+    local mod_changes = event.mod_changes and event.mod_changes["logistics-combinator"]
+    local old_version = mod_changes and mod_changes.old_version
+    local new_version = script.active_mods["logistics-combinator"]
+
+    log("[Control] Configuration changed: " .. tostring(old_version) .. " -> " .. tostring(new_version))
+
+    -- Run data migrations FIRST (before init_globals to preserve data)
+    migrations.run_migrations(old_version, new_version)
+
+    -- Then ensure globals are properly structured (adds missing tables, doesn't overwrite)
+    globals.init_globals()
+
+    -- Then run module-specific migrations
     logistics_combinator_control.on_configuration_changed()
     logistics_chooser_control.on_configuration_changed()
     -- TODO: Handle configuration changes for other modules
     -- mission_control_control.on_configuration_changed()
     -- receiver_combinator_control.on_configuration_changed()
     -- network_manager.on_configuration_changed()
+
+    log("[Control] Configuration change complete")
 end)
 
 -- Register all event handlers
@@ -208,7 +224,7 @@ end
 remote.add_interface("mission_control", {
     -- Get mod version
     get_version = function()
-        return "0.1.0"
+        return "0.2.0"
     end,
 
     -- Get logistics combinator status

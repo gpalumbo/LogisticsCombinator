@@ -945,7 +945,7 @@ function logistics_chooser_gui.on_gui_switch_state_changed(event)
     end
 end
 
---- Handle GUI checked state changed events (for wire filter checkboxes)
+--- Handle GUI checkbox state changed events
 --- @param event EventData.on_gui_checked_state_changed
 function logistics_chooser_gui.on_gui_checked_state_changed(event)
     local element = event.element
@@ -957,83 +957,48 @@ function logistics_chooser_gui.on_gui_checked_state_changed(event)
     if not chooser_data then return end
 
     -- Handle left wire filter checkboxes
-    local left_wire_index = element.name:match("^cond_(%d+)_left_wire_[rg]ed$")
+    local left_wire_index = element.name:match("^cond_(%d+)_left_wire_(red)$") or element.name:match("^cond_(%d+)_left_wire_(green)$")
     if left_wire_index then
-        local group_index = tonumber(left_wire_index)
-        if not chooser_data.groups or not chooser_data.groups[group_index] then return end
+        local condition_index = tonumber(left_wire_index)
+        local condition = chooser_data.groups[condition_index].condition
+        if condition then
+            local condition_row = (element.parent and element.parent.parent and element.parent.parent.parent)  or (element.parent and element.parent.parent)
+            if condition_row then
+                -- Find checkboxes by recursively searching nested GUI structure
+                local red_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_left_wire_red")
+                local green_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_left_wire_green")
 
-        -- Find the filter flow (parent.parent of checkbox)
-        -- Structure: checkbox -> checkbox_panel (flow) -> filter_flow
-        local filter_flow = element.parent and element.parent.parent
-        if not filter_flow or not filter_flow.valid then return end
-
-        -- Find both checkboxes by recursively searching filter_flow's children
-        local red_checkbox = nil
-        local green_checkbox = nil
-
-        -- Search through all children recursively
-        local function find_checkboxes(parent)
-            if not parent or not parent.children then return end
-            for _, child in pairs(parent.children) do
-                if child.name == "cond_" .. group_index .. "_left_wire_red" then
-                    red_checkbox = child
-                elseif child.name == "cond_" .. group_index .. "_left_wire_green" then
-                    green_checkbox = child
+                if red_checkbox and green_checkbox then
+                    local filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
+                    chooser_data.groups[condition_index].condition.left_wire_filter = filter
+                    globals.update_chooser_group(entity.unit_number, condition_index, chooser_data.groups[condition_index])
+                    -- Re-evaluate conditions
+                    evaluate_and_update_statuses(player, chooser_data, entity)
                 end
-                if red_checkbox and green_checkbox then return end
-                find_checkboxes(child)  -- Recurse
             end
-        end
-
-        find_checkboxes(filter_flow)
-
-        if red_checkbox and green_checkbox and red_checkbox.valid and green_checkbox.valid then
-            local filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
-            chooser_data.groups[group_index].condition.left_wire_filter = filter
-            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
-            -- Re-evaluate conditions
-            evaluate_and_update_statuses(player, chooser_data, entity)
         end
         return
     end
 
     -- Handle right wire filter checkboxes
-    local right_wire_index = element.name:match("^cond_(%d+)_right_wire_[rg]ed$")
+    local right_wire_index = element.name:match("^cond_(%d+)_right_wire_(red)$") or element.name:match("^cond_(%d+)_right_wire_(green)$")
     if right_wire_index then
-        local group_index = tonumber(right_wire_index)
-        if not chooser_data.groups or not chooser_data.groups[group_index] then return end
+        local condition_index = tonumber(right_wire_index)
+        local condition = chooser_data.groups[condition_index].condition
+        if condition then
+            local condition_row = (element.parent and element.parent.parent and element.parent.parent.parent)  or (element.parent and element.parent.parent)
+            if condition_row then
+                local red_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_right_wire_red")
+                local green_checkbox = find_child_recursive(condition_row, "cond_" .. condition_index .. "_right_wire_green")
 
-        -- Find the filter flow (parent.parent of checkbox)
-        -- Structure: checkbox -> checkbox_panel (flow) -> filter_flow
-        local filter_flow = element.parent and element.parent.parent
-        if not filter_flow or not filter_flow.valid then return end
-
-        -- Find both checkboxes by recursively searching filter_flow's children
-        local red_checkbox = nil
-        local green_checkbox = nil
-
-        -- Search through all children recursively
-        local function find_checkboxes(parent)
-            if not parent or not parent.children then return end
-            for _, child in pairs(parent.children) do
-                if child.name == "cond_" .. group_index .. "_right_wire_red" then
-                    red_checkbox = child
-                elseif child.name == "cond_" .. group_index .. "_right_wire_green" then
-                    green_checkbox = child
+                if red_checkbox and green_checkbox then
+                    local filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
+                    chooser_data.groups[condition_index].condition.right_wire_filter = filter
+                    globals.update_chooser_group(entity.unit_number, condition_index, chooser_data.groups[condition_index])
+                    -- Re-evaluate conditions
+                    evaluate_and_update_statuses(player, chooser_data, entity)
                 end
-                if red_checkbox and green_checkbox then return end
-                find_checkboxes(child)  -- Recurse
             end
-        end
-
-        find_checkboxes(filter_flow)
-
-        if red_checkbox and green_checkbox and red_checkbox.valid and green_checkbox.valid then
-            local filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
-            chooser_data.groups[group_index].condition.right_wire_filter = filter
-            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
-            -- Re-evaluate conditions
-            evaluate_and_update_statuses(player, chooser_data, entity)
         end
         return
     end
