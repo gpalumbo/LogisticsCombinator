@@ -505,7 +505,7 @@ function globals_module.restore_combinator_config(entity, config)
     end
 
     local unit_number = entity.unit_number
-    local data = storage.logistics_combinators[unit_number]
+    local data = globals_module.get_logistics_combinator_data(unit_number)
 
     if not data then
         -- Register the entity first if not already registered
