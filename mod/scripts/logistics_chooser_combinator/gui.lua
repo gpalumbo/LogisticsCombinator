@@ -47,14 +47,24 @@ local function get_chooser_data_from_player(player)
     if not player then return nil, nil end
 
     local gui_state = globals.get_player_gui_state(player.index)
-    if not gui_state then return nil, nil end
-
-    local chooser_data = globals.get_logistics_chooser_data(gui_state.open_entity)
-    if not chooser_data or not chooser_data.entity or not chooser_data.entity.valid then
+    if not gui_state or not gui_state.open_entity or not gui_state.open_entity.valid then
         return nil, nil
     end
 
-    return chooser_data, chooser_data.entity
+    local entity = gui_state.open_entity
+
+    -- Use the universal get_logistics_chooser_data (handles both ghost and real entities)
+    local chooser_data = globals.get_logistics_chooser_data(entity)
+    if not chooser_data then
+        return nil, nil
+    end
+
+    -- For real entities, validate that entity reference is still valid
+    if not gui_state.is_ghost and chooser_data.entity and not chooser_data.entity.valid then
+        return nil, nil
+    end
+
+    return chooser_data, entity
 end
 
 --- Get groups table GUI element
@@ -145,7 +155,7 @@ local function evaluate_and_update_statuses(player, chooser_data, entity)
 
     -- Store updated group states
     for i, group in ipairs(chooser_data.groups) do
-        globals.update_chooser_group(entity.unit_number, i, group)
+        globals.update_chooser_group_universal(entity, i, group)
     end
 end
 
@@ -291,11 +301,12 @@ local function create_group_row(parent, group_index, group_data, force)
     }
 
     -- Create condition row using shared component (always treat as "first" - no AND/OR)
+    -- Pass false for show_delete_button since we use the top-row delete button
     local condition_table = condition_container.add{
         type = "table",
         column_count = 1
     }
-    gui_utils.create_condition_row(condition_table, group_index, group_data.condition, true)
+    gui_utils.create_condition_row(condition_table, group_index, group_data.condition, true, false)
 
     return row_container
 end
@@ -318,7 +329,12 @@ local gui_handlers = {
         if not player then return end
 
         local chooser_data, entity = get_chooser_data_from_player(player)
-        if not chooser_data then return end
+        if not chooser_data or not entity then
+            log("[Chooser GUI] add_group: No chooser_data or entity found")
+            return
+        end
+
+        log("[Chooser GUI] Adding group to entity: " .. entity.name .. " (is_ghost: " .. tostring(entity.type == "entity-ghost") .. ")")
 
         -- Create new group selection with full condition structure
         local new_group = {
@@ -336,8 +352,11 @@ local gui_handlers = {
             is_active = false     -- Condition evaluation result
         }
 
-        -- Add to storage
-        globals.add_chooser_group(entity.unit_number, new_group)
+        -- Add to storage using universal function (handles both ghosts and real entities)
+        globals.add_chooser_group_universal(entity, new_group)
+
+        -- Refresh chooser_data after adding
+        chooser_data, entity = get_chooser_data_from_player(player)
 
         -- Get groups table
         local groups_table = get_groups_table(player)
@@ -358,10 +377,18 @@ local gui_handlers = {
         if not group_index then return end
 
         local chooser_data, entity = get_chooser_data_from_player(player)
-        if not chooser_data then return end
+        if not chooser_data or not entity then
+            log("[Chooser GUI] delete_group: No chooser_data or entity found")
+            return
+        end
 
-        -- Remove from storage
-        globals.remove_chooser_group(entity.unit_number, group_index)
+        log("[Chooser GUI] Deleting group " .. group_index .. " from entity: " .. entity.name .. " (is_ghost: " .. tostring(entity.type == "entity-ghost") .. ")")
+
+        -- Remove from storage using universal function (handles both ghosts and real entities)
+        globals.remove_chooser_group_universal(entity, group_index)
+
+        -- Refresh chooser_data after removing
+        chooser_data, entity = get_chooser_data_from_player(player)
 
         -- Get groups table
         local groups_table = get_groups_table(player)
@@ -452,7 +479,7 @@ local function create_groups_panel(parent, entity)
     groups_table.style.horizontally_stretchable = true
 
     -- Load existing groups from storage
-    local chooser_data = globals.get_logistics_chooser_data(entity.unit_number)
+    local chooser_data = globals.get_logistics_chooser_data(entity)
     if chooser_data and chooser_data.groups then
         for i, group in ipairs(chooser_data.groups) do
             create_group_row(groups_table, i, group, entity.force)
@@ -599,7 +626,7 @@ function logistics_chooser_gui.create_gui(player, entity)
     create_signal_grid(content_frame, entity)
 
     -- Initialize mode switch state from storage
-    local chooser_data = globals.get_logistics_chooser_data(entity.unit_number)
+    local chooser_data = globals.get_logistics_chooser_data(entity)
     if chooser_data then
         local mode_switch = refs[GUI_NAMES.MAIN_FRAME][GUI_NAMES.MODE_SWITCH]
         if mode_switch and mode_switch.valid then
@@ -698,12 +725,27 @@ end
 --- @param event EventData.on_gui_opened
 function logistics_chooser_gui.on_gui_opened(event)
     local entity = event.entity
-    if entity and entity.valid and entity.name == "logistics-chooser-combinator" then
-        local player = game.players[event.player_index]
+    if not entity or not entity.valid then return end
 
-        -- Ensure entity is registered
-        if not globals.get_logistics_chooser_data(entity.unit_number) then
-            globals.register_logistics_chooser(entity)
+    -- Handle both real entities and ghosts
+    local is_chooser = (entity.name == "logistics-chooser-combinator") or
+                       (entity.ghost_name == "logistics-chooser-combinator")
+
+    if is_chooser then
+        local player = game.players[event.player_index]
+        if not player then return end
+
+        local is_ghost = entity.type == "entity-ghost"
+        log("[Chooser GUI] Opening GUI for entity: " .. (entity.name or entity.ghost_name) .. " (is_ghost: " .. tostring(is_ghost) .. ")")
+
+        -- For real entities (not ghosts), ensure entity is registered
+        if not is_ghost then
+            if not globals.get_logistics_chooser_data(entity) then
+                log("[Chooser GUI] Entity not registered, registering now")
+                globals.register_logistics_chooser(entity)
+            end
+        else
+            log("[Chooser GUI] Ghost entity detected, will use tag storage")
         end
 
         -- Close the default combinator GUI that Factorio opened
@@ -759,7 +801,7 @@ function logistics_chooser_gui.on_gui_click(event)
         -- Toggle type
         local condition = chooser_data.groups[group_index].condition
         condition.right_type = (condition.right_type == "constant") and "signal" or "constant"
-        globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+        globals.update_chooser_group_universal(entity, group_index, chooser_data.groups[group_index])
 
         -- Update GUI visibility
         local is_signal_mode = (condition.right_type == "signal")
@@ -811,7 +853,7 @@ function logistics_chooser_gui.on_gui_elem_changed(event)
         local group_index = tonumber(left_signal_index)
         if chooser_data.groups and chooser_data.groups[group_index] then
             chooser_data.groups[group_index].condition.left_signal = element.elem_value
-            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+            globals.update_chooser_group_universal(entity, group_index, chooser_data.groups[group_index])
             -- Re-evaluate conditions
             evaluate_and_update_statuses(player, chooser_data, entity)
         end
@@ -824,7 +866,7 @@ function logistics_chooser_gui.on_gui_elem_changed(event)
         local group_index = tonumber(right_signal_index)
         if chooser_data.groups and chooser_data.groups[group_index] then
             chooser_data.groups[group_index].condition.right_signal = element.elem_value
-            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+            globals.update_chooser_group_universal(entity, group_index, chooser_data.groups[group_index])
             -- Re-evaluate conditions
             evaluate_and_update_statuses(player, chooser_data, entity)
         end
@@ -838,7 +880,7 @@ function logistics_chooser_gui.on_gui_elem_changed(event)
         if chooser_data.groups and chooser_data.groups[group_index] then
             local selected_item = element.items and element.items[element.selected_index]
             chooser_data.groups[group_index].group = (selected_item == "<none>") and nil or selected_item
-            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+            globals.update_chooser_group_universal(entity, group_index, chooser_data.groups[group_index])
         end
         return
     end
@@ -861,7 +903,7 @@ function logistics_chooser_gui.on_gui_text_changed(event)
         local group_index = tonumber(right_value_index)
         if chooser_data.groups and chooser_data.groups[group_index] then
             chooser_data.groups[group_index].condition.right_value = tonumber(element.text) or 0
-            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+            globals.update_chooser_group_universal(entity, group_index, chooser_data.groups[group_index])
             -- Re-evaluate conditions
             evaluate_and_update_statuses(player, chooser_data, entity)
         end
@@ -877,7 +919,7 @@ function logistics_chooser_gui.on_gui_text_changed(event)
             -- Ensure multiplier is non-negative
             if multiplier < 0 then multiplier = 0 end
             chooser_data.groups[group_index].multiplier = multiplier
-            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+            globals.update_chooser_group_universal(entity, group_index, chooser_data.groups[group_index])
         end
         return
     end
@@ -900,7 +942,7 @@ function logistics_chooser_gui.on_gui_selection_state_changed(event)
         local group_index = tonumber(operator_index)
         if chooser_data.groups and chooser_data.groups[group_index] then
             chooser_data.groups[group_index].condition.operator = gui_utils.get_operator_from_index(element.selected_index)
-            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+            globals.update_chooser_group_universal(entity, group_index, chooser_data.groups[group_index])
             -- Re-evaluate conditions
             evaluate_and_update_statuses(player, chooser_data, entity)
         end
@@ -914,7 +956,7 @@ function logistics_chooser_gui.on_gui_selection_state_changed(event)
         if chooser_data.groups and chooser_data.groups[group_index] then
             local selected_item = element.items and element.items[element.selected_index]
             chooser_data.groups[group_index].group = (selected_item == "<none>") and nil or selected_item
-            globals.update_chooser_group(entity.unit_number, group_index, chooser_data.groups[group_index])
+            globals.update_chooser_group_universal(entity, group_index, chooser_data.groups[group_index])
         end
         return
     end
@@ -971,7 +1013,7 @@ function logistics_chooser_gui.on_gui_checked_state_changed(event)
                 if red_checkbox and green_checkbox then
                     local filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
                     chooser_data.groups[condition_index].condition.left_wire_filter = filter
-                    globals.update_chooser_group(entity.unit_number, condition_index, chooser_data.groups[condition_index])
+                    globals.update_chooser_group_universal(entity, condition_index, chooser_data.groups[condition_index])
                     -- Re-evaluate conditions
                     evaluate_and_update_statuses(player, chooser_data, entity)
                 end
@@ -994,7 +1036,7 @@ function logistics_chooser_gui.on_gui_checked_state_changed(event)
                 if red_checkbox and green_checkbox then
                     local filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
                     chooser_data.groups[condition_index].condition.right_wire_filter = filter
-                    globals.update_chooser_group(entity.unit_number, condition_index, chooser_data.groups[condition_index])
+                    globals.update_chooser_group_universal(entity, condition_index, chooser_data.groups[condition_index])
                     -- Re-evaluate conditions
                     evaluate_and_update_statuses(player, chooser_data, entity)
                 end

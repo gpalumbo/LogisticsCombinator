@@ -117,7 +117,7 @@ luacheck mod/ -v
 
 ```
 mod/lib/signal_utils.lua:45:1: warning: unused function 'format_signal'
-mod/scripts/mission_control.lua:12:5: error: undefined global variable 'globa' (typo?)
+mod/scripts/logistics_combinator/logistics_combinator.lua:12:5: error: undefined global variable 'globa' (typo?)
 mod/control.lua:8:1: warning: accessing undefined global 'defines'
 
 Total: 2 warnings / 1 error in 3 files
@@ -191,7 +191,7 @@ function get_stored_signals(signals_data)
     return signals_data
 end
 
--- In calling code (mod/scripts/mission_control.lua)
+-- In calling code (mod/scripts/logistics_combinator/logistics_combinator.lua)
 local signals = signal_utils.get_stored_signals(storage.signals)
 ```
 

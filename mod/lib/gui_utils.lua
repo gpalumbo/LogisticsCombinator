@@ -357,10 +357,12 @@ end
 -- @param rule_index number: Index of this condition (for naming)
 -- @param condition table: Optional existing condition data to populate
 -- @param is_first boolean: True if this is the first condition (no AND/OR button)
+-- @param show_delete_button boolean: Optional, defaults to true. Set to false to omit delete button
 -- @return table: {flow, and_or_button, left_wire_filter, left_signal, operator, right_type_toggle, right_value, right_signal, right_wire_filter, delete_button}
-function create_condition_row(parent, rule_index, condition, is_first)
+function create_condition_row(parent, rule_index, condition, is_first, show_delete_button)
   condition = condition or {}
   is_first = is_first or (rule_index == 1)
+  if show_delete_button == nil then show_delete_button = true end  -- Default to true
 
   local row_flow = parent.add{
     type = "flow",
@@ -472,16 +474,19 @@ function create_condition_row(parent, rule_index, condition, is_first)
   right_wire_filter.red_checkbox.state = states.red
   right_wire_filter.green_checkbox.state = states.green
 
-  -- Delete button
-  local delete_button = row_flow.add{
-    type = "sprite-button",
-    name = "cond_" .. rule_index .. "_delete",
-    sprite = "utility/close",
-    tooltip = {"gui.delete-condition"},
-    style = "tool_button_red"
-  }
-  delete_button.style.width = 28
-  delete_button.style.height = 28
+  -- Delete button (optional, based on parameter)
+  local delete_button = nil
+  if show_delete_button then
+    delete_button = row_flow.add{
+      type = "sprite-button",
+      name = "cond_" .. rule_index .. "_delete",
+      sprite = "utility/close",
+      tooltip = {"gui.delete-condition"},
+      style = "tool_button_red"
+    }
+    delete_button.style.width = 28
+    delete_button.style.height = 28
+  end
 
   return {
     flow = row_flow,

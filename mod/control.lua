@@ -77,9 +77,9 @@ logistics_chooser_control.register_events()
 local function get_gui_module_for_event(event)
     -- For on_gui_opened, check the entity type
     if event.entity and event.entity.valid then
-        if event.entity.name == "logistics-combinator" then
+        if event.entity.name == "logistics-combinator" or (event.entity.type == "entity-ghost" and event.entity.ghost_name == "logistics-combinator") then
             return logistics_combinator_gui
-        elseif event.entity.name == "logistics-chooser-combinator" then
+        elseif event.entity.name == "logistics-chooser-combinator" or (event.entity.type == "entity-ghost" and event.entity.ghost_name == "logistics-chooser-combinator") then
             return logistics_chooser_gui
         end
     end
@@ -154,6 +154,135 @@ script.on_event(defines.events.on_gui_switch_state_changed, function(event)
     local gui_module = get_gui_module_for_event(event)
     if gui_module and gui_module.on_gui_switch_state_changed then
         gui_module.on_gui_switch_state_changed(event)
+    end
+end)
+
+-- Blueprint support: Store configuration in blueprint tags
+script.on_event(defines.events.on_player_setup_blueprint, function(event)
+    local player = game.get_player(event.player_index)
+    if not player then return end
+
+    log("[Blueprint] on_player_setup_blueprint triggered for player " .. player.name)
+
+    -- Get blueprint (prefer blueprint_to_setup for this event)
+    local blueprint = player.blueprint_to_setup
+    if not blueprint or not blueprint.valid_for_read then
+        blueprint = player.cursor_stack
+        if not blueprint or not blueprint.valid_for_read or not blueprint.is_blueprint then
+            log("[Blueprint] No valid blueprint found")
+            return
+        end
+    end
+
+    -- Get the mapping (CRITICAL: provides blueprint_index -> real_entity mapping)
+    local mapping = event.mapping.get()
+    if not mapping then
+        log("[Blueprint] Warning: mapping is nil")
+        return
+    end
+
+    -- Count entities
+    local entity_count = 0
+    for _ in pairs(mapping) do entity_count = entity_count + 1 end
+    log("[Blueprint] Processing " .. entity_count .. " entities")
+
+    -- Iterate through mapped entities
+    local chooser_count = 0
+    for blueprint_index, real_entity in pairs(mapping) do
+        if not real_entity.valid then
+            goto continue
+        end
+
+        -- Handle logistics chooser combinator
+        if real_entity.name == "logistics-chooser-combinator" then
+            local config = globals.serialize_chooser_config(real_entity.unit_number)
+            if config then
+                blueprint.set_blueprint_entity_tag(blueprint_index, "chooser_config", config)
+                chooser_count = chooser_count + 1
+                log("[Blueprint] Saved config for chooser #" .. blueprint_index .. " with " .. #(config.groups or {}) .. " groups")
+            else
+                log("[Blueprint] Warning: No config found for chooser unit_number " .. real_entity.unit_number)
+            end
+        end
+
+        -- Handle logistics combinator (for future when it supports blueprints)
+        if real_entity.name == "logistics-combinator" then
+            -- TODO: Implement when logistics combinator needs blueprint support
+            -- local config = globals.serialize_combinator_config(real_entity.unit_number)
+            -- if config then
+            --     blueprint.set_blueprint_entity_tag(blueprint_index, "combinator_config", config)
+            -- end
+        end
+
+        ::continue::
+    end
+
+    log("[Blueprint] Saved configuration for " .. chooser_count .. " chooser combinators")
+end)
+
+-- Copy-paste support: Copy configuration from source to target
+script.on_event(defines.events.on_entity_settings_pasted, function(event)
+    local source = event.source
+    local destination = event.destination
+
+    if not source or not source.valid or not destination or not destination.valid then return end
+
+    -- Handle logistics chooser combinator copy-paste
+    if source.name == "logistics-chooser-combinator" and destination.name == "logistics-chooser-combinator" then
+        log("[Copy-Paste] Copying configuration from source unit_number " .. source.unit_number .. " to destination unit_number " .. destination.unit_number)
+
+        local source_config = globals.serialize_chooser_config(source.unit_number)
+        if source_config then
+            log("[Copy-Paste] Source has " .. #(source_config.groups or {}) .. " groups, mode: " .. (source_config.mode or "each"))
+            globals.restore_chooser_config(destination, source_config)
+            log("[Copy-Paste] Configuration copied successfully")
+        else
+            log("[Copy-Paste] Warning: No configuration found in source entity")
+        end
+    end
+end)
+
+-- Entity cloning support: Copy configuration when entity is cloned (editor, mods, etc.)
+script.on_event(defines.events.on_entity_cloned, function(event)
+    local source = event.source
+    local destination = event.destination
+
+    if not source or not source.valid or not destination or not destination.valid then return end
+
+    -- Handle logistics chooser combinator cloning
+    if source.name == "logistics-chooser-combinator" and destination.name == "logistics-chooser-combinator" then
+        log("[Clone] Cloning configuration from source unit_number " .. source.unit_number .. " to destination unit_number " .. destination.unit_number)
+
+        -- Serialize source configuration
+        local source_config = globals.serialize_chooser_config(source.unit_number)
+
+        if source_config then
+            log("[Clone] Source has " .. #(source_config.groups or {}) .. " groups, mode: " .. (source_config.mode or "each"))
+
+            -- Register destination entity first (cloning creates new entity)
+            globals.register_logistics_chooser(destination)
+
+            -- Restore configuration to destination
+            globals.restore_chooser_config(destination, source_config)
+            log("[Clone] Configuration cloned successfully")
+        else
+            log("[Clone] Warning: No configuration found in source entity, registering empty destination")
+            -- Still register the entity even if source has no config
+            globals.register_logistics_chooser(destination)
+        end
+    end
+
+    -- Handle logistics combinator cloning (when implemented)
+    if source.name == "logistics-combinator" and destination.name == "logistics-combinator" then
+        log("[Clone] Logistics combinator cloning detected")
+        -- TODO: Implement when logistics combinator blueprint support is added
+        -- local source_config = globals.serialize_combinator_config(source.unit_number)
+        -- if source_config then
+        --     globals.register_logistics_combinator(destination)
+        --     globals.restore_combinator_config(destination, source_config)
+        -- else
+        --     globals.register_logistics_combinator(destination)
+        -- end
     end
 end)
 

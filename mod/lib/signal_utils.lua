@@ -345,6 +345,8 @@ end
     -- Returns: nil, nil (virtual signals can't be pipetted)
 --]]
 function signal_utils.signal_to_pipette_prototype(signal_id)
+  
+
   if not signal_id or not signal_id.name then
     return nil
   end
@@ -353,8 +355,8 @@ function signal_utils.signal_to_pipette_prototype(signal_id)
   local signal_type = signal_id.type or "item"
 
   -- Virtual signals cannot be pipetted
-  if signal_type == "virtual-signal" or signal_type == "virtual" then
-    return nil
+  if signal_type == "virtual" then
+    signal_type = "virtual_signal"
   end
 
   -- Get the actual prototype object from the game

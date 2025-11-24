@@ -111,15 +111,14 @@ function is_platform_surface(surface)  -- Platform logic → platform_utils
 - Platform enumeration
 
 **DOES NOT OWN:**
-- Receiver-specific logic (that's scripts/receiver_combinator)
-- Signal transmission (that's scripts/network_manager)
+- Entity-specific logic (that's entity scripts)
 - Global platform state storage (that's scripts/globals)
 - Entity validation beyond platform checks
 
 **Decision Criteria:**
 - ✅ "Is this a query about platforms or space locations?" → platform_utils
 - ✅ "Does this determine platform state without side effects?" → platform_utils
-- ❌ "Does this act on platform state (send signals, update entities)?" → scripts/network_manager
+- ❌ "Does this act on platform state (send signals, update entities)?" → entity scripts
 - ❌ "Does this store platform data?" → scripts/globals
 
 **Examples:**
@@ -131,9 +130,8 @@ function is_platform_stationary(platform)
 function get_orbited_surface(platform)
 
 -- ❌ DOES NOT BELONG
-function update_receiver_connection(receiver_id)  -- State update → scripts/receiver_combinator
-function send_signals_to_platform(...)            -- Action → scripts/network_manager
-function register_receiver(entity)                 -- State storage → scripts/globals
+function update_entity_state(entity_id)            -- State update → entity scripts
+function register_entity(entity)                   -- State storage → scripts/globals
 ```
 
 ---
@@ -143,9 +141,8 @@ function register_receiver(entity)                 -- State storage → scripts/
 **⚠️ ARCHITECTURAL NOTE:** This module is **SUPERSEDED** by Factorio's native `TileBuildabilityRule` system (see `docs/tile_buildability_approach.md`). Tile buildability rules are defined in entity prototypes and provide superior performance, game integration, and simplicity.
 
 **RECOMMENDED APPROACH:**
-- Mission Control: Use `colliding_tiles = {"space-platform-foundation"}` in prototype
-- Receiver Combinator: Use `required_tiles = {"space-platform-foundation"}` in prototype
-- Logistics Combinator: No restrictions needed
+- Logistics Combinator: No placement restrictions needed
+- Logistics Chooser Combinator: No placement restrictions needed
 
 **Current Status:** Module implemented but NOT imported by any scripts. Retained only for reference or optional custom error messages.
 
@@ -171,13 +168,12 @@ function register_receiver(entity)                 -- State storage → scripts/
 **Examples:**
 ```lua
 -- ✅ BELONGS HERE (if module is used)
-function validate_mission_control_placement(entity, player)
-function validate_receiver_placement(entity, player)
+function validate_entity_placement(entity, player)
 function refund_entity(entity, player, inventory)
 function show_placement_error(player, message_key, position)
 
 -- ❌ DOES NOT BELONG
-function register_mc_building(entity)              -- Post-placement → scripts/globals
+function register_logistics_combinator(entity)     -- Post-placement → scripts/globals
 function validate_rule_condition(rule)             -- Runtime validation → scripts/logistics_combinator
 function check_circuit_connection(entity)          -- Circuit check → circuit_utils
 ```
@@ -326,110 +322,6 @@ function update_mc_network(surface_index)  -- LOGIC
 - GUI handling module (gui.lua)
 - Event/control handling module (control.lua)
 
-### scripts/mission_control/ (directory)
-
-#### scripts/mission_control/mission_control.lua
-
-**OWNS:**
-- MC network signal aggregation
-- MC output signal distribution
-- MC-specific validation
-- MC network cleanup
-- All core logic specific to the MC building
-
-**DOES NOT OWN:**
-- Entity lifecycle events (that's control.lua)
-- GUI creation/handling (that's gui.lua)
-- Platform detection (that's lib/platform_utils)
-- Signal table operations (that's lib/signal_utils)
-- Circuit I/O (that's lib/circuit_utils)
-- Cross-surface transmission coordination (that's scripts/network_manager)
-- Global registration (calls scripts/globals)
-
-**Examples:**
-```lua
--- ✅ BELONGS HERE
-function update_mc_network(surface_index)         -- Aggregate MC inputs
-function set_mc_outputs(surface_index, red, green) -- Distribute to all MCs
-function validate_mc_state(unit_number)           -- Validation logic
-
--- ❌ DOES NOT BELONG
-function on_mc_built(entity, player)              -- Events → control.lua
-function create_mc_gui(player, entity)            -- GUI → gui.lua
-function register_mc_building(entity)             -- Registration → scripts/globals
-```
-
-#### scripts/mission_control/control.lua
-
-**OWNS:**
-- Entity lifecycle event handlers (build/remove)
-- Wire connection event handlers
-- Event registration for MC entities
-- Dispatching to core logic
-
-**Examples:**
-```lua
--- ✅ BELONGS HERE
-function on_built(entity, player)
-function on_removed(entity)
-function on_wire_added(event)
-function register_events()
-```
-
-#### scripts/mission_control/gui.lua
-
-**OWNS:**
-- MC-specific GUI creation
-- MC GUI event handlers
-- MC GUI state updates
-
----
-
-### scripts/receiver_combinator/ (directory)
-
-#### scripts/receiver_combinator/receiver_combinator.lua
-
-**OWNS:**
-- Receiver connection status checking
-- Receiver-specific orbit detection logic
-- Receiver configuration storage access
-- Receiver status queries
-- All core logic specific to receiver combinators
-
-**DOES NOT OWN:**
-- Entity lifecycle events (that's control.lua)
-- GUI creation/handling (that's gui.lua)
-- Generic platform queries (that's lib/platform_utils)
-- Signal transmission (that's scripts/network_manager)
-- Global registration (calls scripts/globals)
-
-**Examples:**
-```lua
--- ✅ BELONGS HERE
-function check_receiver_connection(unit_number)   -- Business logic using platform_utils
-function get_receiver_status(unit_number)
-function update_receiver_config(unit_number, surfaces)
-
--- ❌ DOES NOT BELONG
-function on_receiver_built(entity, player)        -- Events → control.lua
-function create_receiver_gui(player, entity)      -- GUI → gui.lua
-function relay_to_platform(unit_number, signals)  -- Transmission → scripts/network_manager
-```
-
-#### scripts/receiver_combinator/control.lua
-
-**OWNS:**
-- Entity lifecycle event handlers
-- Platform movement event handlers
-- Event registration for receiver entities
-
-#### scripts/receiver_combinator/gui.lua
-
-**OWNS:**
-- Surface configuration GUI
-- Receiver GUI event handlers
-- Connection status display
-
 ---
 
 ### scripts/logistics_combinator/ (directory)
@@ -507,50 +399,56 @@ end
 
 ---
 
-### scripts/network_manager.lua
+### scripts/logistics_chooser_combinator/ (directory)
+
+#### scripts/logistics_chooser_combinator/logistics_chooser_combinator.lua
 
 **OWNS:**
-- Cross-surface signal transmission coordination
-- Ground-to-space signal flow
-- Space-to-ground signal flow
-- Platform connection state updates
-- Transmission timing (15-tick, 60-tick cycles)
-- Finding receivers for surfaces
-- Signal aggregation for transmission
-- Platform arrival/departure handling
+- Simple rule processing and evaluation (single-condition per rule)
+- Connected entity cache management
+- Rule priority ordering
+- Evaluation mode logic ("all matching" vs "first match only")
+- Rule state tracking (edge detection)
+- All core logic specific to chooser combinators
 
 **DOES NOT OWN:**
-- Entity-specific logic (that's entity scripts)
-- Low-level circuit I/O (that's lib/circuit_utils)
-- Platform queries (that's lib/platform_utils)
-- Signal operations (that's lib/signal_utils)
-
-**Decision Criteria:**
-- ✅ "Is this about coordinating signals between surfaces?" → network_manager.lua
-- ✅ "Is this about the transmission system as a whole?" → network_manager.lua
-- ❌ "Is this about one entity type's behavior?" → entity script
-- ❌ "Is this a generic utility?" → lib/
+- Entity lifecycle events (that's control.lua)
+- GUI creation/handling (that's gui.lua)
+- Actual logistics injection/removal (calls lib/logistics_utils)
+- Generic condition evaluation (that's lib/gui_utils)
+- Global state storage (calls scripts/globals)
 
 **Examples:**
 ```lua
 -- ✅ BELONGS HERE
-function update_transmissions()                    -- Main coordination
-function process_ground_to_space(surface_index)
-function process_space_to_ground(surface_index)
-function update_platform_connections()
-function find_receivers_for_surface(surface_index)
+function process_chooser_rules(unit_number)
+function update_connected_entities(unit_number)
+function reorder_rules(unit_number, from_index, to_index)
+function set_evaluation_mode(unit_number, mode)
 
 -- ❌ DOES NOT BELONG
-function update_mc_network(surface_index)         -- MC-specific → scripts/mission_control
-function check_receiver_connection(unit_number)   // Receiver-specific → scripts/receiver_combinator
-function add_signals(target, source)              -- Generic → lib/signal_utils
+function on_chooser_built(entity, player)         -- Events → control.lua
+function create_chooser_gui(player, entity)       -- GUI → gui.lua
+function inject_logistics_group(entity, template) -- Low-level → lib/logistics_utils
+function compare_values(left, right, operator)    -- Generic → lib/gui_utils
 ```
 
-**COORDINATION ROLE:**
-This module orchestrates entity scripts. It calls:
-- `mission_control.get_mc_aggregated_signals()`
-- `receiver_combinator.check_receiver_connection()`
-- Then performs transmission between them
+#### scripts/logistics_chooser_combinator/control.lua
+
+**OWNS:**
+- Entity lifecycle event handlers (build/remove)
+- Wire connection event handlers
+- Event registration for chooser entities
+- Dispatching to core logic
+
+#### scripts/logistics_chooser_combinator/gui.lua
+
+**OWNS:**
+- Chooser combinator GUI creation
+- Rule row interface with LED indicators
+- Drag-to-reorder functionality
+- GUI event handlers
+- Evaluation mode selector
 
 ---
 
@@ -587,9 +485,8 @@ This module orchestrates entity scripts. It calls:
 - Runtime logic
 
 **FILE NAMING:**
-- `mission_control.lua` - Mission Control building prototype
-- `receiver_combinator.lua` - Receiver combinator prototype
-- `logistics_combinator.lua` - Logistics combinator prototype
+- `logistics_combinator.lua` - Logistics Combinator prototype
+- `logistics_chooser_combinator.lua` - Logistics Chooser Combinator prototype
 
 ---
 
@@ -624,11 +521,6 @@ This module orchestrates entity scripts. It calls:
 - ✅ YES → `circuit_utils`
 - ❌ NO (pure table operations) → `signal_utils`
 
-### Q: Platform-related function - platform_utils or receiver_combinator?
-**A:** Is it a generic platform query?
-- ✅ YES (any code could use it) → `platform_utils`
-- ❌ NO (receiver-specific logic) → `receiver_combinator`
-
 ### Q: Logistics function - logistics_utils or logistics_combinator?
 **A:** Is it low-level section manipulation?
 - ✅ YES (inject/remove/check) → `logistics_utils`
@@ -646,7 +538,6 @@ This module orchestrates entity scripts. It calls:
 
 ### Q: Cross-entity function - where does it go?
 **A:** Which entities does it coordinate?
-- Multiple entity types → `network_manager`
 - Single entity type behavior → that entity's script
 - Generic operation → appropriate lib
 
@@ -772,22 +663,22 @@ end
 ### ❌ WRONG: Entity-specific logic in generic util
 ```lua
 -- lib/signal_utils.lua
-function get_mission_control_signals(entity)  -- NO!
+function get_logistics_combinator_signals(entity)  -- NO!
   -- This is entity-specific
 end
 ```
 **WHY:** signal_utils is for generic signal operations
 
-**FIX:** Move to scripts/mission_control.lua
+**FIX:** Move to scripts/logistics_combinator/logistics_combinator.lua
 
 ---
 
 ### ❌ WRONG: Business logic in globals
 ```lua
 -- scripts/globals.lua
-function register_mc_building(entity)
+function register_logistics_combinator(entity)
   -- ... registration ...
-  update_mc_network(entity.surface.index)  -- NO! This is business logic
+  process_logistics_rules(entity.unit_number)  -- NO! This is business logic
 end
 ```
 **WHY:** globals is for data access only, not processing
@@ -828,11 +719,8 @@ ALLOWED DEPENDENCIES:
 
 control.lua
   ├─> scripts/globals
-  ├─> scripts/mission_control
-  ├─> scripts/receiver_combinator
   ├─> scripts/logistics_combinator
-  ├─> scripts/network_manager
-  └─> scripts/gui_handlers
+  └─> scripts/logistics_chooser_combinator
 
 scripts/* (any script module)
   ├─> lib/* (any lib module)
@@ -876,7 +764,6 @@ New function to add?
 │
 ├─ Is it business logic?
 │  ├─ YES, single entity → scripts/<entity_type>
-│  ├─ YES, coordination → scripts/network_manager or scripts/gui_handlers
 │  └─ NO → continue...
 │
 └─ Is it data structure management?

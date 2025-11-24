@@ -224,7 +224,7 @@ local gui_handlers = {
 
         local condition_count = #combinator_data.conditions
         local is_first = (condition_count == 1)
-        gui_utils.create_condition_row(conditions_table, condition_count, new_condition, is_first)
+        gui_utils.create_condition_row(conditions_table, condition_count, new_condition, is_first, true)
 
         -- Re-evaluate
         evaluate_and_update_indicator(player, entity)
@@ -258,7 +258,7 @@ local gui_handlers = {
         if updated_conditions then
             for i, condition in ipairs(updated_conditions) do
                 local is_first = (i == 1)
-                gui_utils.create_condition_row(conditions_table, i, condition, is_first)
+                gui_utils.create_condition_row(conditions_table, i, condition, is_first, true)
             end
         end
 
@@ -492,7 +492,7 @@ local function create_conditions_panel(parent, entity)
     if combinator_data and combinator_data.conditions then
         for i, condition in ipairs(combinator_data.conditions) do
             local is_first = (i == 1)
-            gui_utils.create_condition_row(conditions_table, i, condition, is_first)
+            gui_utils.create_condition_row(conditions_table, i, condition, is_first, true)
         end
     end
 

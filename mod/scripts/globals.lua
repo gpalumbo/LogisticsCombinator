@@ -329,9 +329,11 @@ function globals_module.set_player_gui_entity(player_index, entity, gui_type)
         storage.player_gui_states = {}
     end
 
+    -- Always store the entity reference directly (for both ghost and real entities)
     storage.player_gui_states[player_index] = {
-        open_entity = entity.unit_number,
-        gui_type = gui_type
+        open_entity = entity,  -- Store entity reference, not unit_number
+        gui_type = gui_type,
+        is_ghost = entity.type == "entity-ghost"
     }
 end
 
@@ -513,15 +515,41 @@ function globals_module.unregister_logistics_chooser(unit_number)
     storage.logistics_choosers[unit_number] = nil
 end
 
---- Get logistics chooser data
---- @param unit_number number The chooser's unit number
+--- Get logistics chooser data (universal - works for both ghost and real entities)
+--- @param entity_or_unit_number LuaEntity|number The chooser entity or unit_number
 --- @return table|nil Chooser data or nil if not found
-function globals_module.get_logistics_chooser_data(unit_number)
-    if not storage.logistics_choosers then
+function globals_module.get_logistics_chooser_data(entity_or_unit_number)
+    -- Handle nil input
+    if not entity_or_unit_number then
         return nil
     end
 
-    return storage.logistics_choosers[unit_number]
+    -- If passed a unit_number (number), read directly from storage
+    if type(entity_or_unit_number) == "number" then
+        if not storage.logistics_choosers then
+            return nil
+        end
+        return storage.logistics_choosers[entity_or_unit_number]
+    end
+
+    -- Otherwise, it's an entity
+    local entity = entity_or_unit_number
+
+    -- Validate entity
+    if not entity.valid then
+        return nil
+    end
+
+    -- Handle ghost entities - read from tags
+    if entity.type == "entity-ghost" then
+        return globals_module.get_ghost_chooser_config(entity)
+    end
+
+    -- Handle real entities - read from storage using unit_number
+    if not storage.logistics_choosers then
+        return nil
+    end
+    return storage.logistics_choosers[entity.unit_number]
 end
 
 --- Add a group to a chooser
@@ -614,6 +642,143 @@ function globals_module.get_active_chooser_group(unit_number)
     end
 
     return nil
+end
+
+--- Serialize chooser configuration for blueprints/copy-paste
+--- @param unit_number number The chooser's unit number
+--- @return table|nil Serialized configuration
+function globals_module.serialize_chooser_config(unit_number)
+    local data = globals_module.get_logistics_chooser_data(unit_number)
+    if not data then return nil end
+
+    return {
+        groups = data.groups or {},
+        mode = data.mode or "each"
+    }
+end
+
+--- Restore chooser configuration from blueprint/copy-paste tags
+--- @param entity LuaEntity The chooser entity
+--- @param config table The serialized configuration
+function globals_module.restore_chooser_config(entity, config)
+    if not entity or not entity.valid or not config then return end
+
+    -- Handle ghost entities differently - store in entity tags
+    if entity.type == "entity-ghost" then
+        -- Use the save function which handles tags correctly
+        globals_module.save_ghost_chooser_config(entity, config)
+        return
+    end
+
+    local unit_number = entity.unit_number
+    local data = storage.logistics_choosers[unit_number]
+
+    if not data then
+        -- Register the entity first if not already registered
+        globals_module.register_logistics_chooser(entity)
+        data = storage.logistics_choosers[unit_number]
+    end
+
+    if data then
+        data.groups = config.groups or {}
+        data.mode = config.mode or "each"
+    end
+end
+
+--- Save chooser configuration to ghost entity tags
+--- @param ghost_entity LuaEntity The ghost entity
+--- @param config table The configuration to save
+function globals_module.save_ghost_chooser_config(ghost_entity, config)
+    if not ghost_entity or not ghost_entity.valid or ghost_entity.type ~= "entity-ghost" then
+        return
+    end
+
+    -- Create a new table with existing tags (if any) plus the new config
+    -- This is necessary because entity.tags might be read-only in certain states
+    local tags = ghost_entity.tags or {}
+    local new_tags = {}
+
+    -- Copy existing tags
+    for key, value in pairs(tags) do
+        new_tags[key] = value
+    end
+
+    -- Add/update chooser config
+    new_tags.chooser_config = config
+
+    -- Assign the new table
+    ghost_entity.tags = new_tags
+end
+
+--- Get chooser configuration from ghost entity tags
+--- @param ghost_entity LuaEntity The ghost entity
+--- @return table|nil Configuration from tags
+function globals_module.get_ghost_chooser_config(ghost_entity)
+    if not ghost_entity or not ghost_entity.valid or ghost_entity.type ~= "entity-ghost" then
+        return nil
+    end
+
+    if ghost_entity.tags and ghost_entity.tags.chooser_config then
+        return ghost_entity.tags.chooser_config
+    else 
+        globals_module.save_ghost_chooser_config(ghost_entity, {
+            groups = {},
+            mode = "each"
+        })
+        return ghost_entity.tags.chooser_config
+    end
+
+end
+
+--- Add a group to chooser (works for both real and ghost entities)
+--- @param entity LuaEntity The chooser entity
+--- @param group table The group to add
+function globals_module.add_chooser_group_universal(entity, group)
+    if not entity or not entity.valid then return end
+
+    if entity.type == "entity-ghost" then
+        local config = globals_module.get_ghost_chooser_config(entity)
+        if not config.groups then config.groups = {} end
+        table.insert(config.groups, group)
+        globals_module.save_ghost_chooser_config(entity, config)
+    else
+        globals_module.add_chooser_group(entity.unit_number, group)
+    end
+end
+
+--- Remove a group from chooser (works for both real and ghost entities)
+--- @param entity LuaEntity The chooser entity
+--- @param group_index number Index of the group to remove
+function globals_module.remove_chooser_group_universal(entity, group_index)
+    if not entity or not entity.valid then return end
+
+    if entity.type == "entity-ghost" then
+        local config = globals_module.get_ghost_chooser_config(entity)
+        if config.groups and config.groups[group_index] then
+            table.remove(config.groups, group_index)
+            globals_module.save_ghost_chooser_config(entity, config)
+        end
+    else
+        globals_module.remove_chooser_group(entity.unit_number, group_index)
+    end
+end
+
+--- Update a group in chooser (works for both real and ghost entities)
+--- @param entity LuaEntity The chooser entity
+--- @param group_index number Index of the group to update
+--- @param group table The updated group data
+function globals_module.update_chooser_group_universal(entity, group_index, group)
+    if not entity or not entity.valid then return end
+
+    if entity.type == "entity-ghost" then
+        local config = globals_module.get_ghost_chooser_config(entity)
+        if config.groups and config.groups[group_index] then
+            config.groups[group_index] = group
+            globals_module.save_ghost_chooser_config(entity, config)
+        end
+    else
+        globals_module.update_chooser_group(entity.unit_number, group_index, group)
+    end
 end
 
 --------------------------------------------------------------------------------

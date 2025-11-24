@@ -1,689 +1,243 @@
-# Mission Control Mod - Development TODO
+# Logistics Combinator Mod - Development TODO
 
-## Project Status: Phase 0 - Planning Complete ✓
+## Project Status: Implementation Complete ✓
 
----
-
-## Phase 0: Project Setup & Planning ✓
-- [x] Review spec.md and requirements
-- [x] Review implementation_hints.md
-- [x] Create todo.md (this file)
-- [x] Plan shared library structure
-- [x] Plan target file organization
-- [x] Create module_responsibility_matrix.md (defines module boundaries)
+**Current Version:** 0.2.0
+**Status:** Both combinators implemented and functional
 
 ---
 
-## Phase 1: Foundation & Shared Libraries
-**Goal:** Create all utility libraries and base infrastructure before entity implementation
+## Completed Features ✓
 
-### 1.1 Core Directory Structure
-- [ ] Create `mod/lib/` directory for shared utilities
-- [ ] Create `mod/scripts/` directory for entity logic
-- [ ] Create `mod/prototypes/entity/` directory
-- [ ] Create `mod/locale/en/` directory
-- [ ] Create placeholder `mod/graphics/` directories (icons, technology, entity)
+### Core Implementation
+- [x] Logistics Combinator with AND/OR logic
+- [x] Logistics Chooser Combinator with priority-based rules
+- [x] Circuit network integration
+- [x] Logistics group injection/removal system
+- [x] Entity lifecycle management
+- [x] Wire connection tracking
+- [x] Edge-triggered rule evaluation
+- [x] Multi-condition evaluation with proper precedence
 
-### 1.2 Shared Utility Libraries (`mod/lib/`)
-- [ ] **`signal_utils.lua`** - Signal manipulation functions
-  - [ ] `add_signals(target, source)` - Sum signals into target table
-  - [ ] `merge_signals(red_signals, green_signals)` - Merge for condition evaluation
-  - [ ] `signals_equal(a, b)` - Compare signal tables
-  - [ ] `copy_signals(source)` - Deep copy signal table
-  - [ ] `clear_signals(table)` - Reset signal table
-  - [ ] Unit tests in comments
+### User Interface
+- [x] Logistics Combinator GUI with AND/OR condition builder
+- [x] Chooser Combinator GUI with drag handles
+- [x] LED indicators (chooser only)
+- [x] Power status display
+- [x] Connected entities count
+- [x] Signal grid display
+- [x] Evaluation mode selector (chooser only)
 
-- [ ] **`circuit_utils.lua`** - Circuit network interaction
-  - [ ] `get_circuit_signals(entity, wire_type, connector_id)` - Read signals from entity
-  - [ ] `set_circuit_signals(entity, wire_type, signals)` - Write signals to entity
-  - [ ] `get_merged_input_signals(entity)` - Get combined red+green inputs
-  - [ ] `has_circuit_connection(entity, wire_type)` - Check if wired
-  - [ ] Handle invalid entities gracefully
-  - [ ] Unit tests in comments
+### Technical Infrastructure
+- [x] Shared utility libraries (signal_utils, circuit_utils, logistics_utils, gui_utils)
+- [x] Global state management
+- [x] Event handling system
+- [x] Save/load persistence
+- [x] Migration support
+- [x] Performance optimization (caching, batch processing)
 
-- [ ] **`platform_utils.lua`** - Platform detection and orbit logic
-  - [ ] `is_platform_surface(surface)` - Check if surface is a platform
-  - [ ] `get_platform_for_surface(surface)` - Get platform object from surface
-  - [ ] `is_platform_orbiting(platform_id, surface_index)` - Check orbit status
-  - [ ] `is_platform_stationary(platform)` - Check if not traveling
-  - [ ] `get_orbited_surface(platform)` - Get surface being orbited
-  - [ ] `find_all_platforms()` - Enumerate all platforms
-  - [ ] Unit tests in comments
-
-- [ ] **`validation.lua`** - Entity placement validation
-  - [ ] `validate_mission_control_placement(entity)` - Planet-only check
-  - [ ] `validate_receiver_placement(entity)` - Platform-only check
-  - [ ] `refund_entity(entity, player)` - Return items and destroy
-  - [ ] `show_placement_error(player, message, position)` - User feedback
-  - [ ] Handle robot placement (no player)
-  - [ ] Unit tests in comments
-
-- [ ] **`logistics_utils.lua`** - Logistics group management
-  - [ ] `find_logistics_entities_on_network(circuit_network)` - Find controllable entities
-  - [ ] `has_logistics_group(entity, group_name)` - Check if group exists
-  - [ ] `inject_logistics_group(entity, group_template)` - Add new group
-  - [ ] `remove_logistics_group(entity, group_name)` - Remove specific group
-  - [ ] `get_logistics_group_template(group_name)` - Retrieve group definition
-  - [ ] `track_injected_group(entity_id, group_id, combinator_id)` - Record injection
-  - [ ] `cleanup_injected_groups(entity_id)` - Remove all tracked groups
-  - [ ] Unit tests in comments
-
-- [ ] **`gui_utils.lua`** - Common GUI helpers
-  - [ ] `create_titlebar(parent, title, close_button_name)` - Standard titlebar
-  - [ ] `create_button_row(parent, buttons)` - Row of buttons
-  - [ ] `close_gui_for_player(player, gui_name)` - Safe GUI destruction
-  - [ ] `center_gui(gui_element)` - Center on screen
-  - [ ] `create_condition_selector(parent)` - Condition builder UI
-  - [ ] Unit tests in comments
-
-### 1.3 Global State Management (`mod/scripts/globals.lua`)
-- [ ] Create `globals.lua` - Global state initialization and access
-  - [ ] `init_globals()` - Initialize all global tables
-  - [ ] `get_mc_network(surface_index)` - Get or create MC network state
-  - [ ] `register_mc_building(entity)` - Add MC to network
-  - [ ] `unregister_mc_building(entity)` - Remove MC from network
-  - [ ] `register_receiver(entity)` - Add receiver to tracking
-  - [ ] `unregister_receiver(entity)` - Remove receiver
-  - [ ] `register_logistics_combinator(entity)` - Add logistics combinator
-  - [ ] `unregister_logistics_combinator(entity)` - Remove logistics combinator
-  - [ ] Proper cleanup on entity removal
-  - [ ] Migration support functions
-
-### 1.4 Locale Strings (`mod/locale/en/mission-control.cfg`)
-- [ ] Entity names and descriptions
-- [ ] Technology names and descriptions
-- [ ] GUI labels and tooltips
-- [ ] Error messages
-- [ ] Status messages
+### Prototypes & Data
+- [x] Entity definitions (both combinators)
+- [x] Item definitions
+- [x] Recipe definitions
+- [x] Technology tree integration
+- [x] Locale strings
+- [x] Graphics assets (placeholder using tinted vanilla sprites)
 
 ---
 
-## Phase 2: Data Phase - Prototypes
-**Goal:** Define all items, recipes, technologies, and entity prototypes
-
-### 2.1 Technology Definitions (`mod/prototypes/technology.lua`)
-- [ ] Mission Control technology
-  - [ ] Icon reference (placeholder)
-  - [ ] Prerequisites: space-platform, radar, advanced-electronics-2
-  - [ ] Science pack costs: 1000x all (auto, logistic, chemical, production, utility, space)
-  - [ ] Unlocks: mission-control-building, receiver-combinator recipes
-- [ ] Logistics Circuit Control technology
-  - [ ] Icon reference (placeholder)
-  - [ ] Prerequisites: logistic-system
-  - [ ] Science pack costs: 500x (auto, logistic, chemical, utility)
-  - [ ] Unlocks: logistics-combinator recipe
-
-### 2.2 Entity Prototypes
-- [ ] **Mission Control Building** (`mod/prototypes/entity/mission_control.lua`)
-  - [ ] Base type: "radar" (to inherit radar behavior but disable exploration)
-  - [ ] Size: 5x5, collision/selection boxes
-  - [ ] Health: 250 (scales with quality)
-  - [ ] Power: 300kW constant
-  - [ ] Circuit connections: 4 terminals (red_in, green_in, red_out, green_out)
-  - [ ] Graphics: Copy radar sprites as placeholder
-  - [ ] Max exploration distance: 0 (disable radar functionality)
-  - [ ] Fast replaceable group
-  - [ ] Minable properties
-
-- [ ] **Receiver Combinator** (`mod/prototypes/entity/receiver_combinator.lua`)
-  - [ ] Base type: "arithmetic-combinator"
-  - [ ] Size: 1x1, collision/selection boxes
-  - [ ] Health: 150 (scales with quality)
-  - [ ] Power: 50kW (quality scaling: uncommon 40kW, rare 30kW, epic 15kW, legendary 5kW)
-  - [ ] Circuit connections: 4 terminals
-  - [ ] Graphics: Copy arithmetic combinator as placeholder
-  - [ ] Custom GUI opening behavior
-  - [ ] Fast replaceable group
-  - [ ] Minable properties
-
-- [ ] **Logistics Combinator** (`mod/prototypes/entity/logistics_combinator.lua`)
-  - [ ] Base type: "decider-combinator"
-  - [ ] Size: 2x1, collision/selection boxes
-  - [ ] Health: 150 (scales with quality)
-  - [ ] Power: 1kW
-  - [ ] Circuit connections: 3 terminals (red_in, green_in, output)
-  - [ ] Graphics: Copy decider combinator with tint
-  - [ ] LED indicators for active rules
-  - [ ] Custom GUI opening behavior
-  - [ ] Fast replaceable group
-  - [ ] Minable properties
-
-### 2.3 Item Definitions (`mod/prototypes/item.lua`)
-- [ ] Mission Control Building item
-  - [ ] Icon reference, stack size: 10, rocket capacity: 1
-  - [ ] Subgroup: circuit-network, order: d[other]-b[mission-control]
-- [ ] Receiver Combinator item
-  - [ ] Icon reference, stack size: 50, rocket capacity: 50
-  - [ ] Subgroup: circuit-network, order: d[other]-c[receiver-combinator]
-- [ ] Logistics Combinator item
-  - [ ] Icon reference, stack size: 50, rocket capacity: 50
-  - [ ] Subgroup: circuit-network, order: d[other]-d[logistics-combinator]
-
-### 2.4 Recipe Definitions (`mod/prototypes/recipe.lua`)
-- [ ] Mission Control Building recipe
-  - [ ] Ingredients: 5 radar + 100 processing units
-  - [ ] Crafting time: 30s, enabled: false
-- [ ] Receiver Combinator recipe
-  - [ ] Ingredients: 10 advanced circuits + 5 radar + 1 arithmetic combinator
-  - [ ] Crafting time: 10s, enabled: false
-- [ ] Logistics Combinator recipe
-  - [ ] Ingredients: 5 electronic circuits + 1 decider combinator + 1 constant combinator
-  - [ ] Crafting time: 5s, enabled: false
-
-### 2.5 Data Loading (`mod/data.lua`)
-- [ ] Require all prototype files in correct order
-- [ ] Ensure dependencies loaded properly
-- [ ] Test loading with --check-unused-prototype-data
-
----
-
-## Phase 3: Mission Control Building Implementation
-**Goal:** Planet-side communication hub that aggregates and broadcasts signals
-
-### 3.1 Core Logic (`mod/scripts/mission_control.lua`)
-- [ ] **Entity lifecycle**
-  - [ ] `on_mc_built(entity)` - Register in global.mc_networks
-  - [ ] `on_mc_removed(entity)` - Cleanup from network
-  - [ ] Validate planet-only placement
-
-- [ ] **Signal aggregation**
-  - [ ] `update_mc_network(surface_index)` - Sum all MC inputs on surface
-  - [ ] Separate red and green signal processing
-  - [ ] Use signal_utils for aggregation
-
-- [ ] **Signal broadcasting**
-  - [ ] `broadcast_to_platforms(surface_index, red_signals, green_signals)` - Send to receivers
-  - [ ] Find all orbiting platforms configured for this surface
-  - [ ] Write signals to receiver output terminals
-
-- [ ] **Receive from platforms**
-  - [ ] `receive_from_platforms(surface_index)` - Aggregate platform signals
-  - [ ] Sum signals from all receivers on orbiting platforms
-  - [ ] Output summed signals to all MC buildings on surface
-
-- [ ] **Update cycle**
-  - [ ] Integrate with network_manager update_transmissions()
-  - [ ] 15-tick update interval
-  - [ ] Performance: batch process per surface
-
-### 3.2 Testing
-- [ ] Single MC building sends/receives correctly
-- [ ] Multiple MCs on same surface aggregate properly
-- [ ] Red/green wire separation maintained
-- [ ] Removal cleanup works
-- [ ] Save/load preserves state
-
----
-
-## Phase 4: Receiver Combinator Implementation
-**Goal:** Platform-side bidirectional signal relay with orbit detection
-
-### 4.1 Core Logic (`mod/scripts/receiver_combinator.lua`)
-- [ ] **Entity lifecycle**
-  - [ ] `on_receiver_built(entity)` - Register in global.platform_receivers
-  - [ ] `on_receiver_removed(entity)` - Cleanup from tracking
-  - [ ] Validate platform-only placement
-  - [ ] Auto-open GUI on placement
-
-- [ ] **Orbit detection**
-  - [ ] `check_receiver_connection(receiver_id)` - Update connection status
-  - [ ] Check if platform is orbiting configured surface
-  - [ ] Check if platform is stationary (speed == 0)
-  - [ ] Update connection state in global
-
-- [ ] **Signal relay**
-  - [ ] `relay_to_platform(receiver_entity, red_signals, green_signals)` - Output to platform
-  - [ ] `relay_from_platform(receiver_entity)` - Read platform signals, send to ground
-  - [ ] Only active when orbiting AND stationary
-  - [ ] Preserve red/green separation
-
-- [ ] **Configuration storage**
-  - [ ] Store configured surface indices per receiver
-  - [ ] Persist across save/load
-  - [ ] Apply changes immediately
-
-### 4.2 GUI Implementation (`mod/scripts/gui_handlers.lua` - Receiver section)
-- [ ] **Surface Configuration GUI**
-  - [ ] Create GUI on entity opened
-  - [ ] Title: "Surface Communication Settings"
-  - [ ] Multi-select checkboxes for all discovered planets
-  - [ ] "Select All" / "Clear All" buttons
-  - [ ] Connection status display
-  - [ ] Only show planets (not space surfaces)
-  - [ ] Disable when platform in transit
-
-- [ ] **GUI Events**
-  - [ ] on_gui_opened - Create receiver GUI
-  - [ ] on_gui_closed - Save and destroy GUI
-  - [ ] on_gui_checked_changed - Update configured surfaces
-  - [ ] on_gui_click - Handle Select All/Clear All buttons
-
-### 4.3 Testing
-- [ ] Platform-only placement enforced
-- [ ] GUI shows all planets correctly
-- [ ] Connection only active when orbiting + stationary
-- [ ] Signals relay bidirectionally
-- [ ] Configuration persists across save/load
-- [ ] Multiple receivers on same platform work independently
-
----
-
-## Phase 5: Signal Transmission System
-**Goal:** Cross-surface signal passing with proper aggregation
-
-### 5.1 Network Manager (`mod/scripts/network_manager.lua`)
-- [ ] **Main update cycle**
-  - [ ] `update_transmissions()` - Called every 15 ticks
-  - [ ] Process all MC networks
-  - [ ] Update all receiver connections
-  - [ ] Coordinate signal flow
-
-- [ ] **Ground-to-space flow**
-  - [ ] For each planet surface with MCs:
-    - [ ] Aggregate all MC red inputs → sum
-    - [ ] Aggregate all MC green inputs → sum
-    - [ ] Find all platforms orbiting this surface
-    - [ ] Send summed signals to connected receivers
-
-- [ ] **Space-to-ground flow**
-  - [ ] For each platform with receivers:
-    - [ ] Check if receiver connected to planet
-    - [ ] Read receiver's input signals
-    - [ ] Send to planet's MC network for aggregation
-  - [ ] For each planet MC network:
-    - [ ] Sum all incoming platform signals
-    - [ ] Output to all MCs on that surface
-
-- [ ] **Transmission delay**
-  - [ ] Implement 15-tick delay using signal queue (optional)
-  - [ ] OR implement instant transmission for simplicity
-  - [ ] Document choice in code
-
-### 5.2 Platform Connection Management
-- [ ] **Orbit tracking** (`update_platform_connections()` - every 60 ticks)
-  - [ ] Enumerate all receivers
-  - [ ] Check platform orbit status
-  - [ ] Update connection state
-  - [ ] Handle platform arrival/departure
-
-- [ ] **Connection state**
-  - [ ] Track last_connected_surface per receiver
-  - [ ] Detect connection state changes
-  - [ ] Clear signals when disconnecting
-
-### 5.3 Testing
-- [ ] Single MC to single receiver works
-- [ ] Multiple MCs aggregate before sending
-- [ ] Multiple platforms aggregate when sending to ground
-- [ ] Platform travel disconnects/reconnects properly
-- [ ] Red/green separation maintained end-to-end
-- [ ] Performance acceptable with 10+ MCs, 5+ platforms
-
----
-
-## Phase 6: Logistics Combinator Implementation
-**Goal:** Circuit-controlled logistics group injection/removal
-
-### 6.1 Core Logic (`mod/scripts/logistics_combinator.lua`)
-- [ ] **Entity lifecycle**
-  - [ ] `on_logistics_combinator_built(entity)` - Register in global
-  - [ ] `on_logistics_combinator_removed(entity)` - Cleanup injected groups
-  - [ ] Initialize rule storage
-  - [ ] Open GUI on placement
-
-- [ ] **Connected entity detection**
-  - [ ] `find_connected_logistics_entities(combinator)` - Scan output network
-  - [ ] Cache connected entity list
-  - [ ] Update cache on wire add/remove events
-  - [ ] Filter for entities with logistic_sections property
-
-- [ ] **Rule processing** (`process_logistics_rules()`)
-  - [ ] Read input signals (red + green merged)
-  - [ ] Evaluate each rule condition
-  - [ ] Edge-triggered: only act on state changes
-  - [ ] For each connected entity:
-    - [ ] If inject + condition met: inject group if not present
-    - [ ] If remove + condition met: remove group if present
-  - [ ] Track rule states (last_condition_value)
-
-- [ ] **Group management**
-  - [ ] Use logistics_utils for injection/removal
-  - [ ] Tag injected groups with combinator unit_number
-  - [ ] Track all injections in global.injected_groups
-  - [ ] Never modify existing user-created groups
-
-- [ ] **Cleanup on removal**
-  - [ ] Remove all groups injected by this combinator
-  - [ ] Clear from global tracking
-  - [ ] Handle invalid entity references gracefully
-
-### 6.2 GUI Implementation (`mod/scripts/gui_handlers.lua` - Logistics section)
-- [ ] **Main GUI**
-  - [ ] Title: "Logistics Combinator"
-  - [ ] "Add Controlled Group" button
-  - [ ] List of active rules
-  - [ ] Connected entities count display
-
-- [ ] **Rule configuration**
-  - [ ] Group selector: choose-elem-button with elem_type = "logistic-groups"
-  - [ ] Multi-condition builder:
-    - [ ] First condition row: NO AND/OR button
-    - [ ] Subsequent condition rows: AND/OR toggle button (default: AND)
-    - [ ] Signal picker (choose-elem-button, elem_type = "signal")
-    - [ ] Operator dropdown (<, >, =, ≠, ≤, ≥)
-    - [ ] Value textfield or signal picker
-    - [ ] [+] button to add condition, [-] button to remove condition
-  - [ ] Action radio buttons: Inject / Remove
-  - [ ] Delete rule button
-
-- [ ] **AND/OR button behavior**
-  - [ ] Click toggles between AND and OR
-  - [ ] Store and_or state in rule.conditions[i].and_or field
-  - [ ] First condition: and_or = nil (no button shown)
-  - [ ] Default for new conditions: and_or = "AND"
-  - [ ] Update button text/appearance when toggled
-
-- [ ] **Rule display**
-  - [ ] Show each rule with status indicator (✓ active / ○ inactive)
-  - [ ] Human-readable format with AND/OR operators
-    - [ ] Example: "Inject 'Fuel' when ((Iron<100 AND Coal<50) OR Rocket-Fuel=0)"
-  - [ ] Edit button (opens rule editor)
-  - [ ] Delete button (removes rule)
-
-- [ ] **GUI Events**
-  - [ ] on_gui_opened - Create logistics GUI
-  - [ ] on_gui_closed - Save and destroy GUI
-  - [ ] on_gui_click - Add/delete rules, change actions, toggle AND/OR
-  - [ ] on_gui_elem_changed - Update group/signal selections
-  - [ ] on_gui_text_changed - Update condition values
-  - [ ] on_condition_and_or_toggled - Update layout and state
-
-### 6.3 Multi-Condition Evaluation with AND/OR Precedence
-- [ ] **Core evaluation function**
-  - [ ] `evaluate_conditions(signals, conditions)` - Evaluate multi-condition expression
-  - [ ] Parse conditions array into AND groups separated by OR
-  - [ ] Evaluate each AND group (all conditions must be true)
-  - [ ] Combine AND group results with OR (any group can be true)
-  - [ ] Return final boolean result
-
-- [ ] **Single condition evaluation**
-  - [ ] `evaluate_single_condition(signals, condition)` - Check one condition
-  - [ ] Support operators: <, >, =, ≠, ≤, ≥
-  - [ ] Handle missing signals (treat as 0)
-  - [ ] Handle signal-to-signal comparison
-  - [ ] Handle constant value comparison
-
-- [ ] **Precedence algorithm**
-  - [ ] Scan conditions for AND/OR operators
-  - [ ] Group consecutive AND conditions together
-  - [ ] Treat standalone conditions and OR-separated conditions as separate groups
-  - [ ] Example: `A AND B AND C OR D OR E` → groups: `[[A,B,C], [D], [E]]`
-  - [ ] Example: `A OR B AND C OR D AND E` → groups: `[[A], [B,C], [D,E]]`
-
-- [ ] **Edge case handling**
-  - [ ] Single condition (no AND/OR) - evaluate directly
-  - [ ] All AND conditions - single group, all must be true
-  - [ ] All OR conditions - multiple single-condition groups, any can be true
-  - [ ] Mixed AND/OR - proper precedence grouping
-
-- [ ] **Examples to test**
-  - [ ] `(Iron<100 AND Coal<50 AND Copper<200) OR Rocket-Fuel=0`
-    - [ ] Groups: `[[Iron<100, Coal<50, Copper<200], [Rocket-Fuel=0]]`
-    - [ ] Result: (false AND true AND false) OR true = false OR true = **true**
-  - [ ] `Iron>0 OR Coal>0 AND Copper>0 OR Oil>0 AND Water>0`
-    - [ ] Groups: `[[Iron>0], [Coal>0, Copper>0], [Oil>0, Water>0]]`
-    - [ ] Result: A OR (B AND C) OR (D AND E)
-
-### 6.4 GUI Layout Logic (Dynamic AND/OR Visual Indication)
-- [ ] **Detect condition operator mix**
-  - [ ] Scan rule.conditions array for and_or field values
-  - [ ] Determine if rule has: all AND, all OR, or mixed
-  - [ ] Track current layout state
-
-- [ ] **Apply visual styling**
-  - [ ] OR conditions: Apply left-shift/indent styling when AND conditions present
-  - [ ] AND conditions: Normal layout (no shift)
-  - [ ] Use GUI style modifiers or padding to create visual shift
-  - [ ] Ensure first condition never has shift (no AND/OR button)
-
-- [ ] **Dynamic layout updates**
-  - [ ] When AND/OR button toggled: recalculate layout
-  - [ ] Rebuild condition rows with updated styling
-  - [ ] Preserve condition values during layout change
-  - [ ] Update visual appearance immediately
-
-- [ ] **Layout rules**
-  - [ ] If only OR conditions (no ANDs): No shift needed (all equal precedence)
-  - [ ] If only AND conditions: No shift needed (all same group)
-  - [ ] If mixed AND/OR: Apply left-shift to OR buttons/rows
-  - [ ] Example visual:
-    ```
-    [Signal][Op][Value]        ← First (no button)
-    [AND][Signal][Op][Value]   ← AND (no shift)
-    [AND][Signal][Op][Value]   ← AND (no shift)
-    [OR] [Signal][Op][Value]   ← OR (left-shifted)
-    ```
-
-- [ ] **GUI element naming**
-  - [ ] Use consistent naming for condition row elements
-  - [ ] Include index in element names for easy lookup
-  - [ ] Example: `logistics_condition_${index}_and_or_button`
-  - [ ] Enable efficient element updates without full rebuild
-
-### 6.5 Testing
-- [ ] Single rule injects group correctly
-- [ ] Multiple rules on same combinator work independently
-- [ ] Edge triggering prevents repeated injection
-- [ ] Removal only affects injected groups
-- [ ] Multiple entities controlled by one combinator
-- [ ] Wire disconnection stops control
-- [ ] Combinator removal cleans up all injected groups
-- [ ] Save/load preserves rules and state
-
----
-
-## Phase 7: Control Script Integration
-**Goal:** Wire everything together in control.lua
-
-### 7.1 Main Control File (`mod/control.lua`)
-- [ ] **Imports**
-  - [ ] Require all lib files
-  - [ ] Require all script files
-  - [ ] Require globals.lua
-
-- [ ] **Initialization**
-  - [ ] on_init: call init_globals()
-  - [ ] on_configuration_changed: call init_globals() + migration
-  - [ ] on_load: restore any runtime state
-
-- [ ] **Entity lifecycle events**
-  - [ ] on_built_entity: dispatch to appropriate handler
-  - [ ] on_robot_built_entity: dispatch to appropriate handler
-  - [ ] script_raised_built: dispatch to appropriate handler
-  - [ ] on_player_mined_entity: dispatch to appropriate handler
-  - [ ] on_robot_mined_entity: dispatch to appropriate handler
-  - [ ] on_entity_died: dispatch to appropriate handler
-  - [ ] script_raised_destroy: dispatch to appropriate handler
-
-- [ ] **Platform events**
-  - [ ] on_space_platform_built: initialize platform tracking
-  - [ ] on_space_platform_destroyed: cleanup platform receivers
-
-- [ ] **Circuit events**
-  - [ ] on_wire_added: update connected entity caches
-  - [ ] on_wire_removed: update connected entity caches
-
-- [ ] **GUI events**
-  - [ ] on_gui_opened: dispatch to appropriate GUI handler
-  - [ ] on_gui_closed: dispatch to appropriate GUI handler
-  - [ ] on_gui_click: dispatch to appropriate GUI handler
-  - [ ] on_gui_checked_changed: dispatch to appropriate GUI handler
-  - [ ] on_gui_elem_changed: dispatch to appropriate GUI handler
-  - [ ] on_gui_text_changed: dispatch to appropriate GUI handler
-
-- [ ] **Periodic updates**
-  - [ ] on_nth_tick(15): call update_transmissions()
-  - [ ] on_nth_tick(60): call update_platform_connections()
-
-- [ ] **Remote interface** (optional)
-  - [ ] Expose API for debugging/integration
-
-### 7.2 Event Dispatcher
-- [ ] Create centralized event dispatcher
-- [ ] Route events to appropriate entity handlers
-- [ ] Handle multiple entity types in single event
-- [ ] Proper error handling and logging
-
----
-
-## Phase 8: Polish & Optimization
-
-### 8.1 Performance Optimization
-- [ ] Profile with large bases (50+ MCs, 20+ platforms)
-- [ ] Optimize signal aggregation algorithm
-- [ ] Cache entity lookups
-- [ ] Minimize table allocations
-- [ ] Batch process where possible
-- [ ] Consider using sparse update cycles for idle entities
-
-### 8.2 Visual Feedback
-- [ ] LED indicators on entities showing activity
-- [ ] Rich text tooltips showing connection status
-- [ ] Flying text for placement errors
-- [ ] Circuit network color coding consistency
-- [ ] GUI status messages
-
-### 8.3 Edge Cases
-- [ ] Entity destroyed during signal transmission
-- [ ] Platform undocking mid-transmission
-- [ ] Rapid wire connection/disconnection
-- [ ] Save during transmission
-- [ ] Quality upgrades on existing entities
-- [ ] Multiplayer sync edge cases
-- [ ] Mod incompatibility detection
-
-### 8.4 User Experience
-- [ ] Clear tooltips explaining mechanics
-- [ ] GUI keyboard shortcuts
-- [ ] Blueprint support verification
-- [ ] Copy/paste settings preservation
-- [ ] Undo support (vanilla handles this)
-- [ ] Fast replace functionality
-
----
-
-## Phase 9: Documentation & Release Prep
-
-### 9.1 In-Game Documentation
-- [ ] Comprehensive entity descriptions
-- [ ] Technology descriptions
-- [ ] Tutorial hints (optional)
-- [ ] Example configurations in description
-
-### 9.2 External Documentation
-- [ ] README.md with mod overview
-- [ ] Usage guide with examples
-- [ ] Technical documentation for modders
-- [ ] Changelog.txt
-
-### 9.3 Graphics Assets
-- [ ] Commission or create custom sprites (deferred to later)
-- [ ] Create technology icons
-- [ ] Create entity icons
-- [ ] Create entity sprites (base, shadow, overlay)
-- [ ] Create GUI graphics if needed
-
-### 9.4 Testing & QA
-- [ ] Full playthrough from early to late game
+## Active Development Tasks
+
+### Documentation
+- [ ] Update all docs to reflect actual implementation (in progress)
+  - [x] spec.md - Rewritten for actual implementation
+  - [x] CLAUDE.md - File structure updated
+  - [ ] todo.md - This file (in progress)
+  - [ ] module_responsibility_matrix.md - Remove mission control references
+  - [ ] code_architecture.md - Update to match actual structure
+  - [ ] tile_buildability_approach.md - Update examples
+  - [ ] linting_setup.md - Update examples
+  - [ ] implementation_hints.md - Update code snippets
+  - [ ] asset_spec.md - Check if exists and update if needed
+  - [ ] VERIFICATION_REPORT.md - Update references
+
+- [ ] Rename mod/locale/en/mission-control.cfg to logistics-combinator.cfg
+
+### Testing & QA
+- [ ] Full playthrough testing
 - [ ] Multiplayer testing
-- [ ] Mod compatibility testing (major mods)
-- [ ] Performance testing with large saves
-- [ ] Load existing saves (migration testing)
+- [ ] Blueprint support verification
+- [ ] Copy/paste settings verification
+- [ ] Performance testing with many combinators
+- [ ] Edge case validation
+- [ ] Mod compatibility testing
 
-### 9.5 Release
-- [ ] Version 0.1.0 alpha release
-- [ ] Gather community feedback
-- [ ] Address critical bugs
-- [ ] Version 0.2.0 beta release
-- [ ] Final polish
-- [ ] Version 1.0.0 release
+### Polish & UX
+- [ ] Review GUI tooltips for clarity
+- [ ] Verify all locale strings are clear
+- [ ] Check entity descriptions
+- [ ] Technology descriptions review
+- [ ] Ensure consistent visual feedback
 
 ---
 
-## Feature Tracking Files
+## Future Enhancements (Optional)
 
-### Detailed Feature Todos (To be created as needed)
-- `docs/mission_control_todo.md` - Detailed MC building implementation
-- `docs/receiver_combinator_todo.md` - Detailed receiver implementation
-- `docs/logistics_combinator_todo.md` - Detailed logistics combinator implementation
-- `docs/signal_transmission_todo.md` - Detailed transmission system
-- `docs/gui_system_todo.md` - Detailed GUI implementation
+### Graphics
+- [ ] Custom combinator sprites (currently using tinted vanilla)
+- [ ] Custom technology icons
+- [ ] LED indicator sprites for entity (chooser)
+- [ ] Custom GUI graphics
+
+### Features (Post 1.0)
+- [ ] Output signals for combinator status
+- [ ] Rule templates/presets
+- [ ] Import/export configurations
+- [ ] Rule comments/descriptions
+- [ ] Signal-to-signal comparison (currently signal-to-constant)
+- [ ] Advanced operators (between, modulo, etc.)
+- [ ] Rule groups with enable/disable
+
+### Performance
+- [ ] Further optimization if needed (profile first)
+- [ ] Configurable update intervals
+- [ ] Lazy evaluation modes
+
+---
+
+## Code Organization
+
+### File Structure (Actual)
+```
+mod/
+├── lib/                    # Stateless utilities
+│   ├── signal_utils.lua
+│   ├── circuit_utils.lua
+│   ├── logistics_utils.lua
+│   ├── logistics_injection.lua
+│   ├── gui_utils.lua
+│   ├── platform_utils.lua
+│   ├── validation.lua
+│   └── gui/
+│       ├── gui_circuit_inputs.lua
+│       └── gui_entity.lua
+├── scripts/               # Stateful logic
+│   ├── globals.lua
+│   ├── migrations.lua
+│   ├── logistics_combinator/
+│   │   ├── logistics_combinator.lua
+│   │   ├── gui.lua
+│   │   └── control.lua
+│   └── logistics_chooser_combinator/
+│       ├── logistics_chooser_combinator.lua
+│       ├── gui.lua
+│       └── control.lua
+└── prototypes/
+    ├── entity/
+    │   ├── logistics_combinator.lua
+    │   └── logistics_chooser_combinator.lua
+    ├── item/
+    │   ├── logistics_combinator.lua
+    │   └── logistics_chooser_combinator.lua
+    ├── recipe/
+    │   ├── logistics_combinator.lua
+    │   └── logistics_chooser_combinator.lua
+    ├── technology/
+    │   └── technologies.lua
+    └── custom-input.lua
+```
+
+### Module Responsibilities
+
+**lib/** - Pure utility functions, no global state access
+- `signal_utils.lua` - Signal table operations (add, merge, copy, compare)
+- `circuit_utils.lua` - Circuit network interaction (read signals, find entities)
+- `logistics_utils.lua` - Logistics group manipulation (inject, remove, check)
+- `logistics_injection.lua` - Advanced injection tracking
+- `gui_utils.lua` - Reusable GUI components
+- `platform_utils.lua` - Platform detection (for future space use)
+- `validation.lua` - Entity placement validation (currently unused - using tile buildability)
+
+**scripts/** - Stateful entity logic
+- `globals.lua` - Global state management and accessors
+- `migrations.lua` - Save migration support
+- Entity directories contain:
+  - `<entity>.lua` - Core functionality (rule processing, state management)
+  - `gui.lua` - GUI creation and event handling
+  - `control.lua` - Entity lifecycle events
 
 ---
 
 ## Development Guidelines
 
-### Module Responsibilities (CRITICAL - READ FIRST!)
-**📖 Before writing ANY code, consult `docs/module_responsibility_matrix.md`**
+### Before Writing Code
+1. Consult `docs/module_responsibility_matrix.md` for correct file placement
+2. Check existing utilities in `lib/` before duplicating functionality
+3. Follow established patterns in similar modules
 
-This document defines:
-- What each module OWNS and DOESN'T OWN
-- Decision criteria for where new functions belong
-- Examples of correct/incorrect placement
-- Anti-patterns to avoid
-- Dependency rules
-
-**When adding a new function, use the decision tree in the matrix to determine correct placement.**
-
-### Code Organization
-- Keep individual .lua files under 750-900 lines
-- Break large modules into sub-modules
-- Use meaningful function and variable names
-- Document all functions with inline comments
-- Group related functions together
+### Code Quality
+- Keep files under 750-900 lines
+- Use inline documentation heavily
+- Follow Factorio modding best practices
+- Test changes before committing
 
 ### Performance
-- Prefer on_nth_tick over on_tick
+- Prefer `on_nth_tick` over `on_tick`
 - Cache expensive lookups
 - Minimize global table traversals
-- Use local variables for frequently accessed data
 - Profile before optimizing
 
-### Testing Strategy
-- Test each phase independently before moving to next
-- Create test scenarios in new game
-- Test with existing saves
-- Test multiplayer scenarios
-- Test mod compatibility
+---
 
-### Version Control
-- Commit after each completed phase
-- Write descriptive commit messages
-- Tag releases with version numbers
-- Maintain changelog
+## Version History
+
+### 0.2.0 (Current)
+- Added Logistics Chooser Combinator
+- Enhanced GUI feedback
+- Performance optimizations
+- Bug fixes
+
+### 0.1.0
+- Initial release
+- Logistics Combinator with AND/OR logic
+- Basic GUI
+- Technology integration
 
 ---
 
-## Current Focus: Phase 1 - Foundation & Shared Libraries
+## Notes for Future Development
+
+### Original Vision
+This mod was originally envisioned as "Mission Control" - a system for cross-surface communication between planets and space platforms using Mission Control buildings and Receiver Combinators. The original spec is preserved in:
+- `docs/spec_original_mission_control.md` - Original requirements
+- `docs/todo_original_mission_control.md` - Original development plan
+
+The project pivoted to focus on logistics automation, which proved to be more practical and useful.
+
+### Migration Path
+If cross-surface communication is needed in the future, the logistics combinators provide a solid foundation:
+- Signal handling infrastructure exists
+- GUI patterns are established
+- State management is robust
+- Could add surface transmission as separate entities
+
+---
+
+## References
+
+- **spec.md** - Current requirements and feature documentation
+- **logistics_chooser_combinator_spec.md** - Detailed chooser specification
+- **module_responsibility_matrix.md** - Code organization rules
+- **code_architecture.md** - System architecture (may need updates)
+- **CLAUDE.md** - Project process and file structure
+
+---
+
+## Current Focus
+
+**Immediate Priority:** Documentation cleanup to remove mission control references and reflect actual implementation.
+
 **Next Steps:**
-1. Create directory structure under mod/
-2. Implement signal_utils.lua
-3. Implement circuit_utils.lua
-4. Implement platform_utils.lua
-5. Implement validation.lua
-6. Implement logistics_utils.lua
-7. Implement gui_utils.lua
-8. Create globals.lua for state management
-9. Write locale strings
-
-**Estimated Time:** 2-3 days for complete Phase 1
-
----
-
-## Notes
-- Graphics are placeholders using tinted vanilla sprites initially
-- Focus on functionality first, polish later
-- Follow Factorio modding best practices
-- Refer to spec.md for detailed requirements
-- Refer to implementation_hints.md for code examples
-- Keep CLAUDE.md updated with any process changes
+1. Complete documentation updates
+2. Testing pass
+3. Prepare for release

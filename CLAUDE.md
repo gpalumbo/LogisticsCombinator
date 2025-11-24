@@ -16,17 +16,11 @@ Before writing ANY code, consult @docs/module_responsibility_matrix.md
 This defines EXACTLY where each function belongs (lib/ vs scripts/, which module).
 Use the decision tree to determine correct placement for new functions.
 
-## File Structure
+## File Structure (Actual)
 ```
-docs/
-├── spec.md
-├── todo.md
-├── module_responsibility_matrix.md
-├── implementation_hints.md
 mod/
 ├── info.json
-├── changelog.txt
-├── thumbnail.png (optional, 144x144)
+├── thumbnail.png
 ├── data.lua
 ├── control.lua
 ├── lib/                    # Stateless utility libraries
@@ -34,71 +28,45 @@ mod/
 │   ├── circuit_utils.lua
 │   ├── platform_utils.lua
 │   ├── logistics_utils.lua
+│   ├── logistics_injection.lua
 │   ├── gui_utils.lua
-│   └── validation.lua (deprecated - use tile_buildability_rules)
+│   ├── gui/
+│   │   ├── gui_circuit_inputs.lua
+│   │   └── gui_entity.lua
+│   └── validation.lua
 ├── scripts/               # Stateful entity logic
 │   ├── globals.lua       # Global state management
-│   ├── network_manager.lua  # Cross-surface coordination
+│   ├── migrations.lua
 │   ├── logistics_combinator/
 │   │   ├── logistics_combinator.lua  # Core functionality
 │   │   ├── gui.lua                   # GUI handling
 │   │   └── control.lua               # Event handling
-│   ├── mission_control/
-│   │   ├── mission_control.lua      # Core functionality
-│   │   ├── gui.lua                  # GUI handling
-│   │   └── control.lua              # Event handling
-│   └── receiver_combinator/
-│       ├── receiver_combinator.lua  # Core functionality
-│       ├── gui.lua                  # GUI handling
-│       └── control.lua              # Event handling
+│   └── logistics_chooser_combinator/
+│       ├── logistics_chooser_combinator.lua  # Core functionality
+│       ├── gui.lua                   # GUI handling
+│       └── control.lua               # Event handling
 ├── locale/
 │   └── en/
 │       └── mission-control.cfg
 ├── prototypes/
+│   ├── custom-input.lua
 │   ├── technology/
-│   │   └── technologies.lua  # All technology definitions
+│   │   └── technologies.lua
 │   ├── entity/
 │   │   ├── logistics_combinator.lua
-│   │   ├── mission_control.lua
-│   │   └── receiver_combinator.lua
+│   │   └── logistics_chooser_combinator.lua
 │   ├── item/
 │   │   ├── logistics_combinator.lua
-│   │   ├── mission_control.lua
-│   │   └── receiver_combinator.lua
+│   │   └── logistics_chooser_combinator.lua
 │   └── recipe/
 │       ├── logistics_combinator.lua
-│       ├── mission_control.lua
-│       └── receiver_combinator.lua
+│       └── logistics_chooser_combinator.lua
 └── graphics/
-│   ├── entity/
-│   │   ├── mission-control/
-│   │   │   ├── mission-control-base.png
-│   │   │   ├── mission-control-base-hr.png
-│   │   │   ├── mission-control-shadow.png
-│   │   │   ├── mission-control-shadow-hr.png
-│   │   │   ├── mission-control-antenna.png
-│   │   │   ├── mission-control-antenna-hr.png
-│   │   │   ├── mission-control-leds.png
-│   │   │   └── mission-control-remnants.png
-│   │   ├── receiver-combinator/
-│   │   │   ├── receiver-combinator-base.png
-│   │   │   ├── receiver-combinator-base-hr.png
-│   │   │   ├── receiver-combinator-dish.png
-│   │   │   ├── receiver-combinator-dish-hr.png
-│   │   │   └── ...
-│   │   └── logistics-combinator/
-│   │       ├── logistics-combinator-base.png
-│   │       ├── logistics-combinator-base-hr.png
-│   │       └── ...
-│   ├── icons/
-│   │   ├── mission-control-building.png
-│   │   ├── receiver-combinator.png
-│   │   └── logistics-combinator.png
-│   ├── technology/
-│   │   ├── mission-control.png
-│   │   └── logistics-circuit-control.png
-│   └── gui/
-│       └── ...
+    └── entities/
+        ├── logistics-combinator.png
+        ├── logistocs_combinator_icon.png
+        ├── logistics-chooser-combinator.png
+        └── logistics_chooser_combinator_icon.png
 ```
 
 Important Process Rules:
