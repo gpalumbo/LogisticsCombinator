@@ -330,11 +330,8 @@ local gui_handlers = {
 
         local chooser_data, entity = get_chooser_data_from_player(player)
         if not chooser_data or not entity then
-            log("[Chooser GUI] add_group: No chooser_data or entity found")
             return
         end
-
-        log("[Chooser GUI] Adding group to entity: " .. entity.name .. " (is_ghost: " .. tostring(entity.type == "entity-ghost") .. ")")
 
         -- Create new group selection with full condition structure
         local new_group = {
@@ -378,11 +375,8 @@ local gui_handlers = {
 
         local chooser_data, entity = get_chooser_data_from_player(player)
         if not chooser_data or not entity then
-            log("[Chooser GUI] delete_group: No chooser_data or entity found")
             return
         end
-
-        log("[Chooser GUI] Deleting group " .. group_index .. " from entity: " .. entity.name .. " (is_ghost: " .. tostring(entity.type == "entity-ghost") .. ")")
 
         -- Remove from storage using universal function (handles both ghosts and real entities)
         globals.remove_chooser_group_universal(entity, group_index)
@@ -736,16 +730,12 @@ function logistics_chooser_gui.on_gui_opened(event)
         if not player then return end
 
         local is_ghost = entity.type == "entity-ghost"
-        log("[Chooser GUI] Opening GUI for entity: " .. (entity.name or entity.ghost_name) .. " (is_ghost: " .. tostring(is_ghost) .. ")")
 
         -- For real entities (not ghosts), ensure entity is registered
         if not is_ghost then
             if not globals.get_logistics_chooser_data(entity) then
-                log("[Chooser GUI] Entity not registered, registering now")
                 globals.register_logistics_chooser(entity)
             end
-        else
-            log("[Chooser GUI] Ghost entity detected, will use tag storage")
         end
 
         -- Close the default combinator GUI that Factorio opened

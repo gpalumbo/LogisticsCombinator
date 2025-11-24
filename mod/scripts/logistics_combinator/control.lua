@@ -16,9 +16,6 @@ function logistics_combinator_control.on_built(entity, player, tags)
         return
     end
 
-
-    log("[Logistics Combinator Control] on_built triggered for unit_number " .. entity.unit_number .. " by " .. (player and player.name or "robot/script"))
-
     if not (entity.name == "logistics-combinator") then
         return
     end
@@ -28,10 +25,7 @@ function logistics_combinator_control.on_built(entity, player, tags)
 
     -- Restore configuration from blueprint tags if available
     if tags and tags.combinator_config then
-        log("[Logistics Combinator Control] Restoring configuration from tags: " .. #(tags.combinator_config.conditions or {}) .. " conditions, " .. #(tags.combinator_config.logistics_sections or {}) .. " sections")
         globals.restore_combinator_config(entity, tags.combinator_config)
-    else
-        log("[Logistics Combinator Control] No tags found, creating empty combinator")
     end
 
     -- Update connected entities for immediate feedback

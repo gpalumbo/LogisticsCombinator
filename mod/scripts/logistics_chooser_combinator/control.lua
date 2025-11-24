@@ -13,23 +13,18 @@ local logistics_chooser_control = {}
 --- @param tags table|nil Blueprint tags (if built from blueprint)
 function logistics_chooser_control.on_built(entity, player, tags)
     if not entity or not entity.valid then
-        return 
-    end 
+        return
+    end
     if  not (entity.name == "logistics-chooser-combinator") then
         return
     end
-
-    log("[Chooser Control] on_built triggered for unit_number " .. entity.unit_number .. " by " .. (player and player.name or "robot/script"))
 
     -- Register in globals
     globals.register_logistics_chooser(entity)
 
     -- Restore configuration from blueprint tags if available
     if tags and tags.chooser_config then
-        log("[Chooser Control] Restoring configuration from tags: " .. #(tags.chooser_config.groups or {}) .. " groups, mode: " .. (tags.chooser_config.mode or "each"))
         globals.restore_chooser_config(entity, tags.chooser_config)
-    else
-        log("[Chooser Control] No tags found, creating empty chooser")
     end
 
     -- Update connected entities
