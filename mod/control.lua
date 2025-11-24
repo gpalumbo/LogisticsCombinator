@@ -68,10 +68,26 @@ script.on_configuration_changed(function(event)
     log("[Control] Configuration change complete")
 end)
 
--- Register all event handlers
--- Note: Entity lifecycle events are registered per-module (they filter by entity name internally)
-logistics_combinator_control.register_events()
-logistics_chooser_control.register_events()
+-- Helper function to route entity lifecycle events based on entity name
+local function get_control_module_for_entity(entity)
+    if not entity or not entity.valid then
+        return nil
+    end
+
+    local entity_name = entity.name
+    -- Handle ghosts - check ghost_name
+    if entity.type == "entity-ghost" then
+        entity_name = entity.ghost_name
+    end
+
+    if entity_name == "logistics-combinator" then
+        return logistics_combinator_control
+    elseif entity_name == "logistics-chooser-combinator" then
+        return logistics_chooser_control
+    end
+
+    return nil
+end
 
 -- Helper function to determine which GUI module to route to based on context
 local function get_gui_module_for_event(event)
@@ -99,8 +115,118 @@ local function get_gui_module_for_event(event)
     return nil
 end
 
+--------------------------------------------------------------------------------
+-- CENTRALIZED ENTITY LIFECYCLE EVENT REGISTRATION
+-- All entity lifecycle events are registered here and routed to appropriate modules
+-- This prevents the last-registration-wins problem when multiple modules register the same event
+--------------------------------------------------------------------------------
+
+-- Entity built events
+script.on_event(defines.events.on_built_entity, function(event)
+    local entity = event.created_entity or event.entity
+    if not entity or not entity.valid then return end
+
+    local control_module = get_control_module_for_entity(entity)
+    if control_module and control_module.on_built then
+        control_module.on_built(entity, game.players[event.player_index], event.tags)
+    end
+end)
+
+script.on_event(defines.events.on_robot_built_entity, function(event)
+    local entity = event.entity or event.created_entity
+    if not entity or not entity.valid then return end
+
+    local control_module = get_control_module_for_entity(entity)
+    if control_module and control_module.on_built then
+        control_module.on_built(entity, nil, event.tags)
+    end
+end)
+
+script.on_event(defines.events.on_space_platform_built_entity, function(event)
+    local entity = event.entity or event.created_entity
+    if not entity or not entity.valid then return end
+
+    local control_module = get_control_module_for_entity(entity)
+    if control_module and control_module.on_built then
+        control_module.on_built(entity, nil, event.tags)
+    end
+end)
+
+script.on_event(defines.events.script_raised_built, function(event)
+    if not event.entity or not event.entity.valid then return end
+
+    local control_module = get_control_module_for_entity(event.entity)
+    if control_module and control_module.on_built then
+        control_module.on_built(event.entity, nil, event.tags)
+    end
+end)
+
+script.on_event(defines.events.script_raised_revive, function(event)
+    if not event.entity or not event.entity.valid then return end
+
+    local control_module = get_control_module_for_entity(event.entity)
+    if control_module and control_module.on_built then
+        control_module.on_built(event.entity, nil, event.tags)
+    end
+end)
+
+-- Entity removed events
+script.on_event(defines.events.on_player_mined_entity, function(event)
+    if not event.entity or not event.entity.valid then return end
+
+    local control_module = get_control_module_for_entity(event.entity)
+    if control_module and control_module.on_removed then
+        control_module.on_removed(event.entity)
+    end
+end)
+
+script.on_event(defines.events.on_robot_mined_entity, function(event)
+    if not event.entity or not event.entity.valid then return end
+
+    local control_module = get_control_module_for_entity(event.entity)
+    if control_module and control_module.on_removed then
+        control_module.on_removed(event.entity)
+    end
+end)
+
+script.on_event(defines.events.on_space_platform_mined_entity, function(event)
+    if not event.entity or not event.entity.valid then return end
+
+    local control_module = get_control_module_for_entity(event.entity)
+    if control_module and control_module.on_removed then
+        control_module.on_removed(event.entity)
+    end
+end)
+
+script.on_event(defines.events.on_entity_died, function(event)
+    if not event.entity or not event.entity.valid then return end
+
+    local control_module = get_control_module_for_entity(event.entity)
+    if control_module and control_module.on_removed then
+        control_module.on_removed(event.entity)
+    end
+end)
+
+script.on_event(defines.events.script_raised_destroy, function(event)
+    if not event.entity or not event.entity.valid then return end
+
+    local control_module = get_control_module_for_entity(event.entity)
+    if control_module and control_module.on_removed then
+        control_module.on_removed(event.entity)
+    end
+end)
+
+-- Register module-specific event handlers (periodic ticks, etc.)
+-- Entity lifecycle events are handled above to avoid last-registration-wins problem
+logistics_combinator_control.register_events()
+logistics_chooser_control.register_events()
+
+--------------------------------------------------------------------------------
+-- GUI EVENT REGISTRATION
 -- Override GUI event handlers with dispatchers that route based on entity type or GUI state
 -- This is necessary because multiple script.on_event calls for the same event will overwrite each other
+--------------------------------------------------------------------------------
+
 script.on_event(defines.events.on_gui_opened, function(event)
     local gui_module = get_gui_module_for_event(event)
     if gui_module and gui_module.on_gui_opened then
@@ -205,13 +331,15 @@ script.on_event(defines.events.on_player_setup_blueprint, function(event)
             end
         end
 
-        -- Handle logistics combinator (for future when it supports blueprints)
+        -- Handle logistics combinator
         if real_entity.name == "logistics-combinator" then
-            -- TODO: Implement when logistics combinator needs blueprint support
-            -- local config = globals.serialize_combinator_config(real_entity.unit_number)
-            -- if config then
-            --     blueprint.set_blueprint_entity_tag(blueprint_index, "combinator_config", config)
-            -- end
+            local config = globals.serialize_combinator_config(real_entity.unit_number)
+            if config then
+                blueprint.set_blueprint_entity_tag(blueprint_index, "combinator_config", config)
+                log("[Blueprint] Saved config for logistics combinator #" .. blueprint_index .. " with " .. #(config.conditions or {}) .. " conditions")
+            else
+                log("[Blueprint] Warning: No config found for logistics combinator unit_number " .. real_entity.unit_number)
+            end
         end
 
         ::continue::
@@ -235,6 +363,20 @@ script.on_event(defines.events.on_entity_settings_pasted, function(event)
         if source_config then
             log("[Copy-Paste] Source has " .. #(source_config.groups or {}) .. " groups, mode: " .. (source_config.mode or "each"))
             globals.restore_chooser_config(destination, source_config)
+            log("[Copy-Paste] Configuration copied successfully")
+        else
+            log("[Copy-Paste] Warning: No configuration found in source entity")
+        end
+    end
+
+    -- Handle logistics combinator copy-paste
+    if source.name == "logistics-combinator" and destination.name == "logistics-combinator" then
+        log("[Copy-Paste] Copying configuration from source unit_number " .. source.unit_number .. " to destination unit_number " .. destination.unit_number)
+
+        local source_config = globals.serialize_combinator_config(source.unit_number)
+        if source_config then
+            log("[Copy-Paste] Source has " .. #(source_config.conditions or {}) .. " conditions, " .. #(source_config.logistics_sections or {}) .. " sections")
+            globals.restore_combinator_config(destination, source_config)
             log("[Copy-Paste] Configuration copied successfully")
         else
             log("[Copy-Paste] Warning: No configuration found in source entity")
@@ -272,17 +414,27 @@ script.on_event(defines.events.on_entity_cloned, function(event)
         end
     end
 
-    -- Handle logistics combinator cloning (when implemented)
+    -- Handle logistics combinator cloning
     if source.name == "logistics-combinator" and destination.name == "logistics-combinator" then
-        log("[Clone] Logistics combinator cloning detected")
-        -- TODO: Implement when logistics combinator blueprint support is added
-        -- local source_config = globals.serialize_combinator_config(source.unit_number)
-        -- if source_config then
-        --     globals.register_logistics_combinator(destination)
-        --     globals.restore_combinator_config(destination, source_config)
-        -- else
-        --     globals.register_logistics_combinator(destination)
-        -- end
+        log("[Clone] Cloning configuration from source unit_number " .. source.unit_number .. " to destination unit_number " .. destination.unit_number)
+
+        -- Serialize source configuration
+        local source_config = globals.serialize_combinator_config(source.unit_number)
+
+        if source_config then
+            log("[Clone] Source has " .. #(source_config.conditions or {}) .. " conditions, " .. #(source_config.logistics_sections or {}) .. " sections")
+
+            -- Register destination entity first (cloning creates new entity)
+            globals.register_logistics_combinator(destination)
+
+            -- Restore configuration to destination
+            globals.restore_combinator_config(destination, source_config)
+            log("[Clone] Configuration cloned successfully")
+        else
+            log("[Clone] Warning: No configuration found in source entity, registering empty destination")
+            -- Still register the entity even if source has no config
+            globals.register_logistics_combinator(destination)
+        end
     end
 end)
 
@@ -294,54 +446,54 @@ end)
 -- Register custom input handler for pipette tool on GUI signal buttons
 log("Attempting to register custom input handler: logistics-combinator-pipette-signal")
 
--- Try-catch to see if the event registration fails
-local success, err = pcall(function()
-  script.on_event("logistics-combinator-pipette-signal", function(event)
-    log("Custom input triggered! Element: " .. tostring(event.element))
+-- -- Try-catch to see if the event registration fails
+-- local success, err = pcall(function()
+--   script.on_event("logistics-combinator-pipette-signal", function(event)
+--     log("Custom input triggered! Element: " .. tostring(event.element))
 
-    -- Check if hovering over a signal sprite-button with signal data
-    if event.element and event.element.tags and event.element.tags.signal_sel then
-      local signal_id = event.element.tags.signal_sel
-      local player = game.get_player(event.player_index)
+--     -- Check if hovering over a signal sprite-button with signal data
+--     if event.element and event.element.tags and event.element.tags.signal_sel then
+--       local signal_id = event.element.tags.signal_sel
+--       local player = game.get_player(event.player_index)
 
-      if not player then
-        log("No player found")
-        return
-      end
+--       if not player then
+--         log("No player found")
+--         return
+--       end
 
-      log("Signal type: " .. tostring(signal_id.type) .. ", name: " .. tostring(signal_id.name))
-      local signal_type = signal_id.type or "item"
+--       log("Signal type: " .. tostring(signal_id.type) .. ", name: " .. tostring(signal_id.name))
+--       local signal_type = signal_id.type or "item"
 
-      -- Convert signal_id to PipetteID format
-      local pipette_id = signal_utils.signal_to_pipette_prototype(signal_id)
+--       -- Convert signal_id to PipetteID format
+--       local pipette_id = signal_utils.signal_to_pipette_prototype(signal_id)
 
-      if pipette_id then
-        log("Attempting pipette for: " .. signal_id.name .. " (type: " .. signal_type .. ", quality: " .. tostring(signal_id.quality) .. ")")
+--       if pipette_id then
+--         log("Attempting pipette for: " .. signal_id.name .. " (type: " .. signal_type .. ", quality: " .. tostring(signal_id.quality) .. ")")
 
-        -- Try pipette with error handling
-        local pipette_success, pipette_err = pcall(function()
-          local result = player.pipette(pipette_id, signal_id.quality, true);
-          log("Pipette result: " .. tostring(result))
-          return result
-        end)
+--         -- Try pipette with error handling
+--         local pipette_success, pipette_err = pcall(function()
+--           local result = player.pipette(pipette_id, signal_id.quality, true);
+--           log("Pipette result: " .. tostring(result))
+--           return result
+--         end)
 
-        if not pipette_success then
-          log("ERROR during pipette: " .. tostring(pipette_err))
-        end
-      else
-        log("Skipping non-pipettable signal: " .. tostring(signal_type))
-      end
-    else
-      log("No element or no signal_sel tag found")
-    end
-  end)
-end)
+--         if not pipette_success then
+--           log("ERROR during pipette: " .. tostring(pipette_err))
+--         end
+--       else
+--         log("Skipping non-pipettable signal: " .. tostring(signal_type))
+--       end
+--     else
+--       log("No element or no signal_sel tag found")
+--     end
+--   end)
+-- end)
 
-if success then
-  log("Custom input handler registered successfully")
-else
-  log("ERROR registering custom input handler: " .. tostring(err))
-end
+-- if success then
+--   log("Custom input handler registered successfully")
+-- else
+--   log("ERROR registering custom input handler: " .. tostring(err))
+-- end
 
 -- Main update cycles
 -- These are registered within their respective control modules

@@ -54,14 +54,16 @@ local function get_combinator_data_from_player(player)
     if not player then return nil, nil end
 
     local gui_state = globals.get_player_gui_state(player.index)
-    if not gui_state then return nil, nil end
+    if not gui_state or not gui_state.open_entity then return nil, nil end
 
-    local combinator_data = globals.get_logistics_combinator_data(gui_state.open_entity)
-    if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then
-        return nil, nil
-    end
+    local entity = gui_state.open_entity
+    if not entity.valid then return nil, nil end
 
-    return combinator_data, combinator_data.entity
+    -- Get data using universal getter (works for both ghost and real)
+    local combinator_data = globals.get_logistics_combinator_data(entity)
+    if not combinator_data then return nil, nil end
+
+    return combinator_data, entity
 end
 
 --- Get condition from combinator data by index
@@ -134,7 +136,7 @@ local function evaluate_and_update_indicator(player, entity)
     if not sprite or not label then return false end
 
     -- Get combinator data
-    local combinator_data = globals.get_logistics_combinator_data(entity.unit_number)
+    local combinator_data = globals.get_logistics_combinator_data(entity)
     if not combinator_data then return false end
 
     -- Get input signals
@@ -213,8 +215,12 @@ local gui_handlers = {
             right_wire_filter = "both"
         }
 
-        -- Add to storage
-        globals.add_logistics_condition(entity.unit_number, new_condition)
+        -- Add to data and write back using universal function
+        if not combinator_data.conditions then
+            combinator_data.conditions = {}
+        end
+        table.insert(combinator_data.conditions, new_condition)
+        globals.update_combinator_data_universal(entity, combinator_data)
 
         -- Get conditions table
         local conditions_table = get_conditions_table(player)
@@ -243,8 +249,11 @@ local gui_handlers = {
         local combinator_data, entity = get_combinator_data_from_player(player)
         if not combinator_data then return end
 
-        -- Remove from storage
-        globals.remove_logistics_condition(entity.unit_number, condition_index)
+        -- Remove from data and write back
+        if combinator_data.conditions and combinator_data.conditions[condition_index] then
+            table.remove(combinator_data.conditions, condition_index)
+            globals.update_combinator_data_universal(entity, combinator_data)
+        end
 
         -- Get conditions table
         local conditions_table = get_conditions_table(player)
@@ -290,8 +299,9 @@ local gui_handlers = {
         -- Toggle type
         condition.right_type = (condition.right_type == "constant") and "signal" or "constant"
 
-        -- Update storage explicitly to ensure persistence
-        globals.update_logistics_condition(entity.unit_number, condition_index, condition)
+        -- Update entire combinator data using universal function
+        combinator_data.conditions[condition_index] = condition
+        globals.update_combinator_data_universal(entity, combinator_data)
 
         -- Find the condition row
         local condition_row = get_condition_row(player, condition_index)
@@ -343,8 +353,9 @@ local gui_handlers = {
         condition.logical_op = (condition.logical_op == "OR") and "AND" or "OR"
         local is_or = (condition.logical_op == "OR")
 
-        -- Update storage explicitly to ensure persistence
-        globals.update_logistics_condition(entity.unit_number, condition_index, condition)
+        -- Update entire combinator data using universal function
+        combinator_data.conditions[condition_index] = condition
+        globals.update_combinator_data_universal(entity, combinator_data)
 
         -- Update button appearance
         e.element.caption = condition.logical_op
@@ -359,72 +370,6 @@ local gui_handlers = {
 
         -- Re-evaluate conditions
         evaluate_and_update_indicator(player, entity)
-    end,
-
-    -- Save rule button
-    save_rule = function(e)
-        local player = game.get_player(e.player_index)
-        if not player then return end
-
-        local combinator_data, entity = get_combinator_data_from_player(player)
-        if not combinator_data then return end
-
-        -- Get GUI elements
-        local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
-        if not frame then return end
-
-        local group_name_field = frame[GUI_NAMES.GROUP_NAME_TEXTFIELD]
-        local inject_radio = frame[GUI_NAMES.ACTION_RADIO_INJECT]
-
-        if not group_name_field or not inject_radio then return end
-
-        local group_name = group_name_field.text or ""
-        if group_name == "" then
-            player.create_local_flying_text{
-                text = "Please enter a group name",
-                create_at_cursor = true
-            }
-            return
-        end
-
-        -- Determine action from radio buttons
-        local action = inject_radio.state and "inject" or "remove"
-
-        -- Create new rule
-        local new_rule = {
-            group_name = group_name,
-            action = action,
-            conditions = {},  -- Copy current conditions
-            is_active = false,
-            last_state = false
-        }
-
-        -- Deep copy conditions
-        if combinator_data.conditions then
-            for _, cond in ipairs(combinator_data.conditions) do
-                table.insert(new_rule.conditions, {
-                    logical_op = cond.logical_op,
-                    left_signal = cond.left_signal,
-                    left_wire_filter = cond.left_wire_filter,
-                    operator = cond.operator,
-                    right_type = cond.right_type,
-                    right_value = cond.right_value,
-                    right_signal = cond.right_signal,
-                    right_wire_filter = cond.right_wire_filter
-                })
-            end
-        end
-
-        -- Add rule to storage
-        globals.add_logistics_rule(entity.unit_number, new_rule)
-
-        -- Refresh GUI
-        player.create_local_flying_text{
-            text = "Rule saved successfully",
-            create_at_cursor = true
-        }
-
-        -- Note: Full GUI refresh would be better, but for now just notify user
     end
 }
 
@@ -487,8 +432,8 @@ local function create_conditions_panel(parent, entity)
     conditions_table.style.vertical_spacing = 2
     conditions_table.style.horizontally_stretchable = true
 
-    -- Load existing conditions from storage
-    local combinator_data = globals.get_logistics_combinator_data(entity.unit_number)
+    -- Load existing conditions from storage (use universal function - works for ghosts and real entities)
+    local combinator_data = globals.get_logistics_combinator_data(entity)
     if combinator_data and combinator_data.conditions then
         for i, condition in ipairs(combinator_data.conditions) do
             local is_first = (i == 1)
@@ -643,7 +588,7 @@ local function create_actions_section(parent, entity, actions_frame)
     sections_table.style.vertical_spacing = 4
 
     -- Get combinator data and create rows for existing sections
-    local combinator_data = globals.get_logistics_combinator_data(entity.unit_number)
+    local combinator_data = globals.get_logistics_combinator_data(entity)
     if combinator_data and combinator_data.logistics_sections then
         for i, section in ipairs(combinator_data.logistics_sections) do
             create_logistics_section_row(sections_table, i, section, entity.force)
@@ -906,25 +851,38 @@ end
 --- @param event EventData.on_gui_opened
 function logistics_combinator_gui.on_gui_opened(event)
     local entity = event.entity
-    if entity and entity.valid and entity.name == "logistics-combinator" then
-        local player = game.players[event.player_index]
+    if not entity or not entity.valid then
+        return
+    end
 
-        -- Ensure entity is registered (in case this is from a loaded save or the entity wasn't registered)
-        if not globals.get_logistics_combinator_data(entity.unit_number) then
+    -- Check for both real and ghost logistics combinators
+    local entity_name = entity.name
+    if entity.type == "entity-ghost" then
+        entity_name = entity.ghost_name
+    end
+
+    if entity_name ~= "logistics-combinator" then return end
+
+    local player = game.players[event.player_index]
+
+    -- For REAL entities only: ensure registered and update connections
+    if entity.type ~= "entity-ghost" then
+        -- Use universal function - pass entity directly
+        if not globals.get_logistics_combinator_data(entity) then
             globals.register_logistics_combinator(entity)
         end
 
-        -- Update connected entities for immediate feedback (avoids waiting for 90-tick poll)
+        -- Update connected entities for immediate feedback (only real entities have circuit connections)
         logistics_combinator.update_connected_entities(entity.unit_number)
-
-        -- Close the default combinator GUI that Factorio opened
-        if player.opened == entity then
-            player.opened = nil
-        end
-
-        -- Open our custom GUI
-        logistics_combinator_gui.create_gui(player, entity)
     end
+
+    -- Close the default combinator GUI that Factorio opened (works for both ghost and real)
+    if player.opened == entity then
+        player.opened = nil
+    end
+
+    -- Open our custom GUI (works for both ghost and real)
+    logistics_combinator_gui.create_gui(player, entity)
 end
 
 --- Handle GUI closed event
@@ -979,10 +937,14 @@ function logistics_combinator_gui.on_gui_click(event)
         if not combinator_data then return end
 
         -- Add new section with default values
-        globals.add_logistics_section(entity.unit_number, {
+        if not combinator_data.logistics_sections then
+            combinator_data.logistics_sections = {}
+        end
+        table.insert(combinator_data.logistics_sections, {
             group = nil,
             multiplier = 1.0
         })
+        globals.update_combinator_data_universal(entity, combinator_data)
 
         -- Refresh the actions section to show new row
         local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME]
@@ -1010,12 +972,17 @@ function logistics_combinator_gui.on_gui_click(event)
         local combinator_data, entity = get_combinator_data_from_player(player)
         if not combinator_data then return end
 
-        -- Remove section from storage
-        globals.remove_logistics_section(entity.unit_number, section_index)
+        -- Remove section from data and write back
+        if combinator_data.logistics_sections and combinator_data.logistics_sections[section_index] then
+            table.remove(combinator_data.logistics_sections, section_index)
+            globals.update_combinator_data_universal(entity, combinator_data)
+        end
 
-        -- Trigger reconciliation to remove any injected sections for the deleted section
-        local condition_result = globals.get_condition_result(entity.unit_number)
-        logistics_combinator.reconcile_sections(entity.unit_number, condition_result)
+        if(entity.type ~= "entity-ghost") then
+            -- Trigger reconciliation to remove any injected sections for the deleted section
+            local condition_result = globals.get_condition_result(entity.unit_number)
+            logistics_combinator.reconcile_sections(entity.unit_number, condition_result)
+        end
 
         -- Refresh the actions section to update indices
         local frame = player.gui.screen[GUI_NAMES.MAIN_FRAME] 
@@ -1052,7 +1019,8 @@ function logistics_combinator_gui.on_gui_elem_changed(event)
         local condition = get_condition_by_index(combinator_data, condition_index)
         if condition then
             condition.left_signal = element.elem_value
-            globals.update_logistics_condition(entity.unit_number, condition_index, condition)
+            combinator_data.conditions[condition_index] = condition
+            globals.update_combinator_data_universal(entity, combinator_data)
             evaluate_and_update_indicator(player, entity)
         end
         return
@@ -1065,7 +1033,8 @@ function logistics_combinator_gui.on_gui_elem_changed(event)
         local condition = get_condition_by_index(combinator_data, condition_index)
         if condition then
             condition.right_signal = element.elem_value
-            globals.update_logistics_condition(entity.unit_number, condition_index, condition)
+            combinator_data.conditions[condition_index] = condition
+            globals.update_combinator_data_universal(entity, combinator_data)
             evaluate_and_update_indicator(player, entity)
         end
         return
@@ -1091,7 +1060,8 @@ function logistics_combinator_gui.on_gui_text_changed(event)
         local condition = get_condition_by_index(combinator_data, condition_index)
         if condition then
             condition.right_value = tonumber(element.text) or 0
-            globals.update_logistics_condition(entity.unit_number, condition_index, condition)
+            combinator_data.conditions[condition_index] = condition
+            globals.update_combinator_data_universal(entity, combinator_data)
             evaluate_and_update_indicator(player, entity)
         end
         return
@@ -1101,19 +1071,22 @@ function logistics_combinator_gui.on_gui_text_changed(event)
     if element.name:match("^" .. GUI_NAMES.MULTIPLIER_PREFIX) then
         local section_index = tonumber(element.name:match("^" .. GUI_NAMES.MULTIPLIER_PREFIX .. "(%d+)$"))
         if section_index then
-            local sections = globals.get_logistics_sections(entity.unit_number)
-            if sections and sections[section_index] then
+            if combinator_data.logistics_sections and combinator_data.logistics_sections[section_index] then
                 -- Update the multiplier in the section
-                local section = sections[section_index]
+                local section = combinator_data.logistics_sections[section_index]
                 local multiplier = tonumber(element.text) or 1.0
                 -- Ensure multiplier is positive
                 if multiplier < 0 then multiplier = 0 end
                 section.multiplier = multiplier
-                globals.update_logistics_section(entity.unit_number, section_index, section)
+                combinator_data.logistics_sections[section_index] = section
+                globals.update_combinator_data_universal(entity, combinator_data)
 
                 -- Trigger reconciliation to update injected sections
-                local condition_result = globals.get_condition_result(entity.unit_number)
-                logistics_combinator.reconcile_sections(entity.unit_number, condition_result)
+                -- Only call if real entity (not ghost)
+                if entity.type ~= "entity-ghost" then
+                    local condition_result = globals.get_condition_result(entity.unit_number)
+                    logistics_combinator.reconcile_sections(entity.unit_number, condition_result)
+                end
             end
         end
         return
@@ -1138,7 +1111,8 @@ function logistics_combinator_gui.on_gui_selection_state_changed(event)
         local condition = get_condition_by_index(combinator_data, condition_index)
         if condition then
             condition.operator = gui_utils.get_operator_from_index(element.selected_index)
-            globals.update_logistics_condition(entity.unit_number, condition_index, condition)
+            combinator_data.conditions[condition_index] = condition
+            globals.update_combinator_data_universal(entity, combinator_data)
             evaluate_and_update_indicator(player, entity)
         end
         return
@@ -1148,18 +1122,21 @@ function logistics_combinator_gui.on_gui_selection_state_changed(event)
     if element.name:match("^" .. GUI_NAMES.GROUP_PICKER_PREFIX) then
         local section_index = tonumber(element.name:match("^" .. GUI_NAMES.GROUP_PICKER_PREFIX .. "(%d+)$"))
         if section_index then
-            local sections = globals.get_logistics_sections(entity.unit_number)
-            if sections and sections[section_index] then
+            if combinator_data.logistics_sections and combinator_data.logistics_sections[section_index] then
                 -- Get selected group name from dropdown
                 local selected_item = element.items[element.selected_index]
                 -- Update the group in the section ("<none>" means nil)
-                local section = sections[section_index]
+                local section = combinator_data.logistics_sections[section_index]
                 section.group = (selected_item == "<none>") and nil or selected_item
-                globals.update_logistics_section(entity.unit_number, section_index, section)
+                combinator_data.logistics_sections[section_index] = section
+                globals.update_combinator_data_universal(entity, combinator_data)
 
                 -- Trigger reconciliation to update injected sections
-                local condition_result = globals.get_condition_result(entity.unit_number)
-                logistics_combinator.reconcile_sections(entity.unit_number, condition_result)
+                -- Only call if real entity (not ghost)
+                if entity.type ~= "entity-ghost" then
+                    local condition_result = globals.get_condition_result(entity.unit_number)
+                    logistics_combinator.reconcile_sections(entity.unit_number, condition_result)
+                end
             end
         end
         return
@@ -1212,7 +1189,8 @@ function logistics_combinator_gui.on_gui_checked_state_changed(event)
 
                 if red_checkbox and green_checkbox then
                     condition.left_wire_filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
-                    globals.update_logistics_condition(entity.unit_number, condition_index, condition)
+                    combinator_data.conditions[condition_index] = condition
+                    globals.update_combinator_data_universal(entity, combinator_data)
                     evaluate_and_update_indicator(player, entity)
                 end
             end
@@ -1233,7 +1211,8 @@ function logistics_combinator_gui.on_gui_checked_state_changed(event)
 
                 if red_checkbox and green_checkbox then
                     condition.right_wire_filter = gui_utils.get_wire_filter_from_checkboxes(red_checkbox.state, green_checkbox.state)
-                    globals.update_logistics_condition(entity.unit_number, condition_index, condition)
+                    combinator_data.conditions[condition_index] = condition
+                    globals.update_combinator_data_universal(entity, combinator_data)
                     evaluate_and_update_indicator(player, entity)
                 end
             end

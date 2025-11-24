@@ -131,26 +131,48 @@ function globals_module.unregister_logistics_combinator(unit_number)
     storage.logistics_combinators[unit_number] = nil
 end
 
---- Get logistics combinator data
---- @param unit_number number The combinator's unit number
+--- Get logistics combinator data (universal - works for both ghost and real entities)
+--- @param entity_or_unit_number LuaEntity|number The combinator entity or unit_number
 --- @return table|nil Combinator data or nil if not found
-function globals_module.get_logistics_combinator_data(unit_number)
-    if not storage.logistics_combinators then
+function globals_module.get_logistics_combinator_data(entity_or_unit_number)
+    -- Handle nil input
+    if not entity_or_unit_number then
         return nil
     end
 
-    return storage.logistics_combinators[unit_number]
+    -- If passed a unit_number (number), read directly from storage
+    if type(entity_or_unit_number) == "number" then
+        if not storage.logistics_combinators then
+            return nil
+        end
+        return storage.logistics_combinators[entity_or_unit_number]
+    end
+
+    -- Otherwise, it's an entity
+    local entity = entity_or_unit_number
+
+    -- Validate entity
+    if not entity.valid then
+        return nil
+    end
+
+    -- Handle ghost entities - read from tags
+    if entity.type == "entity-ghost" then
+        return globals_module.get_ghost_combinator_config(entity)
+    end
+
+    -- Handle real entities - read from storage using unit_number
+    if not storage.logistics_combinators then
+        return nil
+    end
+    return storage.logistics_combinators[entity.unit_number]
 end
 
 --- Add a logistics section to a combinator
---- @param unit_number number The combinator's unit number
+--- @param entity_or_unit_number LuaEntity|number The combinator entity or unit number
 --- @param section table The section to add {group = "name", multiplier = 1.0}
-function globals_module.add_logistics_section(unit_number, section)
-    if not storage.logistics_combinators then
-        return
-    end
-
-    local data = storage.logistics_combinators[unit_number]
+function globals_module.add_logistics_section(entity_or_unit_number, section)
+    local data = globals_module.get_logistics_combinator_data(entity_or_unit_number)
     if data then
         if not data.logistics_sections then
             data.logistics_sections = {}
@@ -160,47 +182,34 @@ function globals_module.add_logistics_section(unit_number, section)
 end
 
 --- Remove a logistics section from a combinator
---- @param unit_number number The combinator's unit number
+--- @param entity_or_unit_number LuaEntity|number The combinator entity or unit number
 --- @param section_index number Index of the section to remove
-function globals_module.remove_logistics_section(unit_number, section_index)
-    if not storage.logistics_combinators then
-        return
-    end
-
-    local data = storage.logistics_combinators[unit_number]
+function globals_module.remove_logistics_section(entity_or_unit_number, section_index)
+    local data = globals_module.get_logistics_combinator_data(entity_or_unit_number)
     if data and data.logistics_sections and data.logistics_sections[section_index] then
         table.remove(data.logistics_sections, section_index)
     end
 end
 
 --- Update a logistics section in a combinator
---- @param unit_number number The combinator's unit number
+--- @param entity_or_unit_number LuaEntity|number The combinator entity or unit number
 --- @param section_index number Index of the section to update
 --- @param section table The new section data {group = "name", multiplier = 1.0}
-function globals_module.update_logistics_section(unit_number, section_index, section)
-    if not storage.logistics_combinators then
-        return
-    end
-
-    local data = storage.logistics_combinators[unit_number]
+function globals_module.update_logistics_section(entity_or_unit_number, section_index, section)
+    local data = globals_module.get_logistics_combinator_data(entity_or_unit_number)
     if data and data.logistics_sections then
         data.logistics_sections[section_index] = section
     end
 end
 
 --- Get all logistics sections for a combinator
---- @param unit_number number The combinator's unit number
+--- @param entity_or_unit_number LuaEntity|number The combinator entity or unit number
 --- @return table Array of logistics sections
-function globals_module.get_logistics_sections(unit_number)
-    if not storage.logistics_combinators then
-        return {}
-    end
-
-    local data = storage.logistics_combinators[unit_number]
+function globals_module.get_logistics_sections(entity_or_unit_number)
+    local data = globals_module.get_logistics_combinator_data(entity_or_unit_number)
     if data and data.logistics_sections then
         return data.logistics_sections
     end
-
     return {}
 end
 
@@ -364,12 +373,8 @@ end
 --- Add a condition to a logistics combinator
 --- @param unit_number number The combinator's unit number
 --- @param condition table The condition to add
-function globals_module.add_logistics_condition(unit_number, condition)
-    if not storage.logistics_combinators then
-        return
-    end
-
-    local data = storage.logistics_combinators[unit_number]
+function globals_module.add_logistics_condition(entity_or_unit_number, condition)
+    local data = globals_module.get_logistics_combinator_data(entity_or_unit_number)
     if data then
         if not data.conditions then
             data.conditions = {}
@@ -381,12 +386,9 @@ end
 --- Remove a condition from a logistics combinator
 --- @param unit_number number The combinator's unit number
 --- @param condition_index number Index of the condition to remove
-function globals_module.remove_logistics_condition(unit_number, condition_index)
-    if not storage.logistics_combinators then
-        return
-    end
+function globals_module.remove_logistics_condition(entity_or_unit_number, condition_index)
+    local data = globals_module.get_logistics_combinator_data(entity_or_unit_number)
 
-    local data = storage.logistics_combinators[unit_number]
     if data and data.conditions and data.conditions[condition_index] then
         table.remove(data.conditions, condition_index)
     end
@@ -396,12 +398,9 @@ end
 --- @param unit_number number The combinator's unit number
 --- @param condition_index number Index of the condition to update
 --- @param condition table The new condition data
-function globals_module.update_logistics_condition(unit_number, condition_index, condition)
-    if not storage.logistics_combinators then
-        return
-    end
+function globals_module.update_logistics_condition(entity_or_unit_number, condition_index, condition)
+    local data = globals_module.get_logistics_combinator_data(entity_or_unit_number)
 
-    local data = storage.logistics_combinators[unit_number]
     if data and data.conditions then
         data.conditions[condition_index] = condition
         storage.logistics_combinators[unit_number] = data
@@ -411,12 +410,8 @@ end
 --- Get all conditions for a logistics combinator
 --- @param unit_number number The combinator's unit number
 --- @return table Array of conditions
-function globals_module.get_logistics_conditions(unit_number)
-    if not storage.logistics_combinators then
-        return {}
-    end
-
-    local data = storage.logistics_combinators[unit_number]
+function globals_module.get_logistics_conditions(entity_or_unit_number)
+    local data = globals_module.get_logistics_combinator_data(entity_or_unit_number)
     if data and data.conditions then
         return data.conditions
     end
@@ -482,6 +477,121 @@ function globals_module.get_last_condition_state(unit_number)
     end
 
     return false
+end
+
+--- Serialize logistics combinator configuration for blueprints/copy-paste
+--- @param unit_number number The combinator's unit number
+--- @return table|nil Serialized configuration
+function globals_module.serialize_combinator_config(entity_or_unit_number)
+    local data = globals_module.get_logistics_combinator_data(entity_or_unit_number)
+    if not data then return nil end
+
+    return {
+        conditions = data.conditions or {},
+        logistics_sections = data.logistics_sections or {}
+    }
+end
+
+--- Restore logistics combinator configuration from blueprint/copy-paste tags
+--- @param entity LuaEntity The combinator entity
+--- @param config table The serialized configuration
+function globals_module.restore_combinator_config(entity, config)
+    if not entity or not entity.valid or not config then return end
+
+    -- Handle ghost entities differently - store in entity tags
+    if entity.type == "entity-ghost" then
+        globals_module.save_ghost_combinator_config(entity, config)
+        return
+    end
+
+    local unit_number = entity.unit_number
+    local data = storage.logistics_combinators[unit_number]
+
+    if not data then
+        -- Register the entity first if not already registered
+        globals_module.register_logistics_combinator(entity)
+        data = storage.logistics_combinators[unit_number]
+    end
+
+    if data then
+        data.conditions = config.conditions or {}
+        data.logistics_sections = config.logistics_sections or {}
+    end
+end
+
+--- Save combinator configuration to ghost entity tags
+--- @param ghost_entity LuaEntity The ghost entity
+--- @param config table The configuration to save
+function globals_module.save_ghost_combinator_config(ghost_entity, config)
+    if not ghost_entity or not ghost_entity.valid or ghost_entity.type ~= "entity-ghost" then
+        return
+    end
+
+    -- Create a new table with existing tags (if any) plus the new config
+    local tags = ghost_entity.tags or {}
+    local new_tags = {}
+
+    -- Copy existing tags
+    for key, value in pairs(tags) do
+        new_tags[key] = value
+    end
+
+    -- Add/update combinator config
+    new_tags.combinator_config = config
+
+    -- Assign the new table
+    ghost_entity.tags = new_tags
+end
+
+--- Get combinator configuration from ghost entity tags
+--- @param ghost_entity LuaEntity The ghost entity
+--- @return table Configuration from tags (never nil, returns default if missing)
+function globals_module.get_ghost_combinator_config(ghost_entity)
+    if not ghost_entity or not ghost_entity.valid or ghost_entity.type ~= "entity-ghost" then
+        return {conditions = {}, logistics_sections = {}}
+    end
+
+    if ghost_entity.tags and ghost_entity.tags.combinator_config then
+        return ghost_entity.tags.combinator_config
+    else
+        -- Initialize with default config
+        local default_config = {
+            conditions = {},
+            logistics_sections = {}
+        }
+        globals_module.save_ghost_combinator_config(ghost_entity, default_config)
+        return default_config
+    end
+end
+
+--- Update combinator data (universal - works for both ghost and real entities)
+--- @param entity LuaEntity The combinator entity
+--- @param data table The complete data to write
+function globals_module.update_combinator_data_universal(entity, data)
+    if not entity or not entity.valid or not data then return end
+
+    if entity.type == "entity-ghost" then
+        -- For ghosts, write to tags
+        globals_module.save_ghost_combinator_config(entity, data)
+    else
+        -- For real entities, update storage
+        local unit_number = entity.unit_number
+        if not storage.logistics_combinators then
+            storage.logistics_combinators = {}
+        end
+
+        if not storage.logistics_combinators[unit_number] then
+            -- Register first if not exists
+            globals_module.register_logistics_combinator(entity)
+        end
+
+        -- Update the data fields (preserve entity reference and other internal fields)
+        local combinator_data = storage.logistics_combinators[unit_number]
+        if combinator_data then
+            combinator_data.conditions = data.conditions or {}
+            combinator_data.logistics_sections = data.logistics_sections or {}
+        end
+    end
 end
 
 -- ============================================================================
@@ -555,12 +665,8 @@ end
 --- Add a group to a chooser
 --- @param unit_number number The chooser's unit number
 --- @param group table The group to add {group = "name", signal = {...}, value = 0}
-function globals_module.add_chooser_group(unit_number, group)
-    if not storage.logistics_choosers then
-        return
-    end
-
-    local data = storage.logistics_choosers[unit_number]
+function globals_module.add_chooser_group(entity_or_unit_number, group)
+    local data = globals_module.get_logistics_chooser_data(entity_or_unit_number)
     if data then
         if not data.groups then
             data.groups = {}
@@ -572,12 +678,9 @@ end
 --- Remove a group from a chooser
 --- @param unit_number number The chooser's unit number
 --- @param group_index number Index of the group to remove
-function globals_module.remove_chooser_group(unit_number, group_index)
-    if not storage.logistics_choosers then
-        return
-    end
+function globals_module.remove_chooser_group(entity_or_unit_number, group_index)
 
-    local data = storage.logistics_choosers[unit_number]
+    local data = globals_module.get_logistics_chooser_data(entity_or_unit_number)
     if data and data.groups and data.groups[group_index] then
         table.remove(data.groups, group_index)
     end
@@ -587,12 +690,8 @@ end
 --- @param unit_number number The chooser's unit number
 --- @param group_index number Index of the group to update
 --- @param group table The updated group data
-function globals_module.update_chooser_group(unit_number, group_index, group)
-    if not storage.logistics_choosers then
-        return
-    end
-
-    local data = storage.logistics_choosers[unit_number]
+function globals_module.update_chooser_group(entity_or_unit_number, group_index, group)
+    local data = globals_module.get_logistics_chooser_data(entity_or_unit_number)
     if data and data.groups and data.groups[group_index] then
         data.groups[group_index] = group
     end
@@ -601,12 +700,9 @@ end
 --- Get all groups from a chooser
 --- @param unit_number number The chooser's unit number
 --- @return table Array of groups
-function globals_module.get_chooser_groups(unit_number)
-    if not storage.logistics_choosers then
-        return {}
-    end
+function globals_module.get_chooser_groups(entity_or_unit_number)
 
-    local data = storage.logistics_choosers[unit_number]
+    local data = globals_module.get_logistics_chooser_data(entity_or_unit_number)
     if data and data.groups then
         return data.groups
     end
@@ -617,12 +713,8 @@ end
 --- Set the active group for a chooser
 --- @param unit_number number The chooser's unit number
 --- @param group_name string|nil The active group name (nil for none)
-function globals_module.set_active_chooser_group(unit_number, group_name)
-    if not storage.logistics_choosers then
-        return
-    end
-
-    local data = storage.logistics_choosers[unit_number]
+function globals_module.set_active_chooser_group(entity_or_unit_number, group_name)
+    local data = globals_module.get_logistics_chooser_data(entity_or_unit_number)
     if data then
         data.active_group = group_name
     end
@@ -631,12 +723,9 @@ end
 --- Get the active group for a chooser
 --- @param unit_number number The chooser's unit number
 --- @return string|nil The active group name
-function globals_module.get_active_chooser_group(unit_number)
-    if not storage.logistics_choosers then
-        return nil
-    end
+function globals_module.get_active_chooser_group(entity_or_unit_number)
 
-    local data = storage.logistics_choosers[unit_number]
+    local data = globals_module.get_logistics_chooser_data(entity_or_unit_number)
     if data then
         return data.active_group
     end
@@ -647,8 +736,8 @@ end
 --- Serialize chooser configuration for blueprints/copy-paste
 --- @param unit_number number The chooser's unit number
 --- @return table|nil Serialized configuration
-function globals_module.serialize_chooser_config(unit_number)
-    local data = globals_module.get_logistics_chooser_data(unit_number)
+function globals_module.serialize_chooser_config(entity_or_unit_number)
+    local data = globals_module.get_logistics_chooser_data(entity_or_unit_number)
     if not data then return nil end
 
     return {

@@ -10,27 +10,33 @@ local logistics_combinator_control = {}
 --- Handle when a logistics combinator is built
 --- @param entity LuaEntity The built entity
 --- @param player LuaPlayer|nil The player who built it (nil for robots)
-function logistics_combinator_control.on_built(entity, player)
-    if not entity or not entity.valid or entity.name ~= "logistics-combinator" then
+--- @param tags table|nil Blueprint tags (if built from blueprint)
+function logistics_combinator_control.on_built(entity, player, tags)
+    if not entity or not entity.valid then
         return
     end
 
-    -- TODO: Implement build handler
-    -- 1. Register the combinator in globals
-    -- 2. Initialize rule storage
-    -- 3. Cache initial connected entities
-    -- 4. Open GUI if built by player
+
+    log("[Logistics Combinator Control] on_built triggered for unit_number " .. entity.unit_number .. " by " .. (player and player.name or "robot/script"))
+
+    if not (entity.name == "logistics-combinator") then
+        return
+    end
 
     -- Register in globals
     globals.register_logistics_combinator(entity)
 
-    -- Update connected entities
+    -- Restore configuration from blueprint tags if available
+    if tags and tags.combinator_config then
+        log("[Logistics Combinator Control] Restoring configuration from tags: " .. #(tags.combinator_config.conditions or {}) .. " conditions, " .. #(tags.combinator_config.logistics_sections or {}) .. " sections")
+        globals.restore_combinator_config(entity, tags.combinator_config)
+    else
+        log("[Logistics Combinator Control] No tags found, creating empty combinator")
+    end
+
+    -- Update connected entities for immediate feedback
     logistics_combinator.update_connected_entities(entity.unit_number)
 
-    -- Open GUI if built by player
-    if player and player.valid then
-        logistics_combinator_gui.create_gui(player, entity)
-    end
 end
 
 --- Handle when a logistics combinator is removed
@@ -88,36 +94,12 @@ function logistics_combinator_control.on_wire_removed(event)
     end
 end
 
---- Register all event handlers
+--- Register module-specific event handlers (periodic ticks only)
+--- Entity lifecycle events are registered centrally in control.lua to avoid last-registration-wins problem
 function logistics_combinator_control.register_events()
-    -- Entity lifecycle events
-    script.on_event(defines.events.on_built_entity, function(event)
-        logistics_combinator_control.on_built(event.created_entity, game.players[event.player_index])
-    end)
-
-    script.on_event(defines.events.on_robot_built_entity, function(event)
-        logistics_combinator_control.on_built(event.created_entity, nil)
-    end)
-
-    script.on_event(defines.events.script_raised_built, function(event)
-        logistics_combinator_control.on_built(event.entity, nil)
-    end)
-
-    script.on_event(defines.events.on_player_mined_entity, function(event)
-        logistics_combinator_control.on_removed(event.entity)
-    end)
-
-    script.on_event(defines.events.on_robot_mined_entity, function(event)
-        logistics_combinator_control.on_removed(event.entity)
-    end)
-
-    script.on_event(defines.events.on_entity_died, function(event)
-        logistics_combinator_control.on_removed(event.entity)
-    end)
-
-    script.on_event(defines.events.script_raised_destroy, function(event)
-        logistics_combinator_control.on_removed(event.entity)
-    end)
+    -- NOTE: Entity lifecycle events (on_built_entity, on_robot_built_entity, etc.)
+    -- are registered centrally in control.lua and routed to on_built/on_removed
+    -- This function only registers periodic tick events specific to this module
 
     -- Wire events don't exist in Factorio API - use polling instead
     -- Connection changes are detected by periodic polling in on_nth_tick(90)

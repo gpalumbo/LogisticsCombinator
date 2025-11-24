@@ -15,7 +15,7 @@ function logistics_chooser_control.on_built(entity, player, tags)
     if not entity or not entity.valid then
         return 
     end 
-    if  not (entity.name == "logistics-chooser-combinator") then --  or (entity.type == "entity-ghost" and entity.ghost_name == "logistics-chooser-combinator")) then
+    if  not (entity.name == "logistics-chooser-combinator") then
         return
     end
 
@@ -61,59 +61,12 @@ function logistics_chooser_control.on_removed(entity)
     end
 end
 
---- Register all event handlers
+--- Register module-specific event handlers (periodic ticks only)
+--- Entity lifecycle events are registered centrally in control.lua to avoid last-registration-wins problem
 function logistics_chooser_control.register_events()
-    -- Entity lifecycle events
-    script.on_event(defines.events.on_built_entity, function(event)
-        local entity = event.created_entity or event.entity
-        if not entity or not entity.valid then return end
-
-        logistics_chooser_control.on_built(entity, game.players[event.player_index], event.tags)
-    end)
-
-    script.on_event(defines.events.on_robot_built_entity, function(event)
-        local entity = event.entity or event.created_entity
-        if not entity or not entity.valid then return end
-
-        logistics_chooser_control.on_built(entity, nil, event.tags)
-    end)
-
-    script.on_event(defines.events.on_space_platform_built_entity, function(event)
-        local entity = event.entity or event.created_entity
-        if not entity or not entity.valid then return end
-
-        logistics_chooser_control.on_built(entity, nil, event.tags)
-    end)
-
-    script.on_event(defines.events.script_raised_built, function(event)
-        logistics_chooser_control.on_built(event.entity, nil, event.tags)
-    end)
-
-    script.on_event(defines.events.script_raised_revive, function(event)
-        if event.entity and event.entity.valid and event.entity.name == "logistics-chooser-combinator" then
-            logistics_chooser_control.on_built(event.entity, nil, event.tags)
-        end
-    end)
-
-    script.on_event(defines.events.on_player_mined_entity, function(event)
-        logistics_chooser_control.on_removed(event.entity)
-    end)
-
-    script.on_event(defines.events.on_robot_mined_entity, function(event)
-        logistics_chooser_control.on_removed(event.entity)
-    end)
-
-    script.on_event(defines.events.on_space_platform_mined_entity, function(event)
-        logistics_chooser_control.on_removed(event.entity)
-    end)
-
-    script.on_event(defines.events.on_entity_died, function(event)
-        logistics_chooser_control.on_removed(event.entity)
-    end)
-
-    script.on_event(defines.events.script_raised_destroy, function(event)
-        logistics_chooser_control.on_removed(event.entity)
-    end)
+    -- NOTE: Entity lifecycle events (on_built_entity, on_robot_built_entity, etc.)
+    -- are registered centrally in control.lua and routed to on_built/on_removed
+    -- This function only registers periodic tick events specific to this module
 
     -- NOTE: GUI events are registered centrally in control.lua to avoid conflicts
     -- The central dispatcher routes events based on entity type and player GUI state
