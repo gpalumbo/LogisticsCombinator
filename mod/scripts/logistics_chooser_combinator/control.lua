@@ -63,68 +63,26 @@ end
 
 --- Register all event handlers
 function logistics_chooser_control.register_events()
-    -- Cache to store ghost tags before they're revived
-    -- Key: surface_index .. "_" .. position.x .. "_" .. position.y
-    -- Value: tags from ghost entity
-    if not storage.ghost_tags_cache then
-        storage.ghost_tags_cache = {}
-    end
-
-    -- Capture ghost entity tags BEFORE they're revived
-    -- This fires just before a ghost is upgraded/revived by the game
-    script.on_event(defines.events.on_pre_ghost_upgraded, function(event)
-        local ghost = event.ghost
-        if not ghost or not ghost.valid then return end
-
-        if ghost.ghost_name == "logistics-chooser-combinator" then
-            if ghost.tags and ghost.tags.chooser_config then
-                log("[Chooser Control] Caching ghost tags before revival: " .. #(ghost.tags.chooser_config.groups or {}) .. " groups")
-                -- Ensure cache exists
-                if not storage.ghost_tags_cache then
-                    storage.ghost_tags_cache = {}
-                end
-                -- Store using position as key (will be matched when entity is built)
-                local key = ghost.surface.index .. "_" .. ghost.position.x .. "_" .. ghost.position.y
-                storage.ghost_tags_cache[key] = ghost.tags
-            end
-        end
-    end)
-
     -- Entity lifecycle events
     script.on_event(defines.events.on_built_entity, function(event)
         local entity = event.created_entity or event.entity
         if not entity or not entity.valid then return end
 
-        -- Check for cached ghost tags
-        local tags = event.tags
-        if entity.name == "logistics-chooser-combinator" and not tags then
-            local key = entity.surface.index .. "_" .. entity.position.x .. "_" .. entity.position.y
-            if storage.ghost_tags_cache and storage.ghost_tags_cache[key] then
-                log("[Chooser Control] Found cached ghost tags for position " .. key)
-                tags = storage.ghost_tags_cache[key]
-                storage.ghost_tags_cache[key] = nil  -- Clean up
-            end
-        end
-
-        logistics_chooser_control.on_built(entity, game.players[event.player_index], tags)
+        logistics_chooser_control.on_built(entity, game.players[event.player_index], event.tags)
     end)
 
     script.on_event(defines.events.on_robot_built_entity, function(event)
         local entity = event.entity or event.created_entity
         if not entity or not entity.valid then return end
 
-        -- Check for cached ghost tags
-        local tags = event.tags
-        if entity.name == "logistics-chooser-combinator" and not tags then
-            local key = entity.surface.index .. "_" .. entity.position.x .. "_" .. entity.position.y
-            if storage.ghost_tags_cache and storage.ghost_tags_cache[key] then
-                log("[Chooser Control] Found cached ghost tags for position " .. key)
-                tags = storage.ghost_tags_cache[key]
-                storage.ghost_tags_cache[key] = nil  -- Clean up
-            end
-        end
+        logistics_chooser_control.on_built(entity, nil, event.tags)
+    end)
 
-        logistics_chooser_control.on_built(entity, nil, tags)
+    script.on_event(defines.events.on_space_platform_built_entity, function(event)
+        local entity = event.entity or event.created_entity
+        if not entity or not entity.valid then return end
+
+        logistics_chooser_control.on_built(entity, nil, event.tags)
     end)
 
     script.on_event(defines.events.script_raised_built, function(event)
@@ -142,6 +100,10 @@ function logistics_chooser_control.register_events()
     end)
 
     script.on_event(defines.events.on_robot_mined_entity, function(event)
+        logistics_chooser_control.on_removed(event.entity)
+    end)
+
+    script.on_event(defines.events.on_space_platform_mined_entity, function(event)
         logistics_chooser_control.on_removed(event.entity)
     end)
 
@@ -179,35 +141,15 @@ function logistics_chooser_control.register_events()
 
         logistics_chooser.process_all_choosers()
     end)
-
-    -- Cleanup stale ghost tag cache entries every 5 seconds
-    script.on_nth_tick(300, function()
-        if storage.ghost_tags_cache then
-            -- Count entries for logging
-            local count = 0
-            for _ in pairs(storage.ghost_tags_cache) do count = count + 1 end
-            if count > 0 then
-                log("[Chooser Control] Cleaning up " .. count .. " stale ghost tag cache entries")
-                storage.ghost_tags_cache = {}
-            end
-        end
-    end)
 end
 
 --- Initialize on mod load
 function logistics_chooser_control.on_init()
-    -- Initialize ghost tags cache
-    if not storage.ghost_tags_cache then
-        storage.ghost_tags_cache = {}
-    end
+    -- Nothing to initialize for chooser control
 end
 
 --- Handle configuration changes
 function logistics_chooser_control.on_configuration_changed()
-    -- Ensure ghost tags cache exists
-    if not storage.ghost_tags_cache then
-        storage.ghost_tags_cache = {}
-    end
 
     -- Handle mod version changes
     -- Migrate old group format to new format with condition structure
