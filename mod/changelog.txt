@@ -1,0 +1,25 @@
+---------------------------------------------------------------------------------------------------
+Version: 0.2.2
+Date: 2025-11-24
+  Bug Fixes:
+    - Logistics combinator not updating container on wire attachment as chooser does.
+    - Connecting to output terminals doen't update the target.
+  Packaging Changes:
+    - Added changelog.txt
+---------------------------------------------------------------------------------------------------
+Version: 0.2.1
+Date: 2025-11-24
+  Major Features:
+    - Added Logistics Chooser Combinator which allows processing multiple signal and action
+      combinations. Saves space on platforms.
+---------------------------------------------------------------------------------------------------
+Version: 0.1.2
+Date: 2025-11-19
+  Bug Fixes:
+    - Fixed performance issue
+---------------------------------------------------------------------------------------------------
+Version: 0.1.0
+Date: 2025-11-19
+  Major Features:
+    - Initial release
+    - Logistics Combinator allows for complex condition driving one or more logistic section injections

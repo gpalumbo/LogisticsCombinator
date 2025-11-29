@@ -38,8 +38,7 @@ end
 
 --- Process rules for a specific logistics combinator
 --- @param unit_number number The combinator's unit number
---- @param force_update boolean|nil If true, update even if condition state hasn't changed (for GUI changes)
-function logistics_combinator.process_rules(unit_number, force_update)
+function logistics_combinator.process_rules(unit_number)
     local combinator_data = globals.get_logistics_combinator_data(unit_number)
     if not combinator_data or not combinator_data.entity or not combinator_data.entity.valid then
         return
@@ -89,19 +88,15 @@ function logistics_combinator.process_rules(unit_number, force_update)
         )
     end
 
-    -- 4. Edge detection - only act on state changes (unless forced)
-    local previous_state = globals.get_last_condition_state(unit_number)
-    local state_changed = (current_result ~= previous_state)
-
-    if not state_changed and not force_update then
-        return  -- No state change and not forced, do nothing
-    end
-
-    -- 5. Update state in globals
+    -- 4. Update state in globals (track for GUI display)
     globals.set_last_condition_state(unit_number, current_result)
     globals.set_condition_result(unit_number, current_result)
 
-    -- 6. Reconcile logistics sections based on condition result
+    -- 5. Reconcile logistics sections based on condition result
+    -- NOTE: Always reconcile, not just on state changes. This ensures newly connected
+    -- entities receive the correct logistics groups. The reconcile_sections function
+    -- is idempotent - it checks if groups already exist before injecting.
+    -- This matches the chooser combinator's behavior.
     logistics_combinator.reconcile_sections(unit_number, current_result)
 end
 

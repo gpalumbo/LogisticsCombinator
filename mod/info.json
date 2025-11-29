@@ -1,9 +1,9 @@
 {
   "name": "logistics-combinator",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "title": "Logistics Combinator",
   "author": "Gordon Palumbo",
   "factorio_version": "2.0",
   "dependencies": ["base >= 2.0.0", "flib >= 0.16.0"],
-  "description": "A circuit-controlled combinator that dynamically injects and removes logistics groups based on circuit conditions"
+  "description": "Circuit-controlled combinators that dynamically injects and removes logistics groups based on circuit conditions"
 }
