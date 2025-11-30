@@ -20,10 +20,13 @@
 --   - Global state access (pure library)
 --   - Mod-specific entity logic
 --
--- DEPENDENCIES: None (pure library)
+-- DEPENDENCIES:
+--   - lib/logistics_utils.lua (for get_section_manager)
 --
 -- COMPLEXITY: ~200 lines
 --------------------------------------------------------------------------------
+
+local logistics_utils = require("lib.logistics_utils")
 
 local circuit_utils = {}
 
@@ -532,14 +535,16 @@ function circuit_utils.find_logistics_entities_on_output(combinator)
   -- Filter for logistics capability
   for unit_number, entity in pairs(all_entities) do
     if entity.valid then
-      -- Check if entity has a requester point (logistics capability)
-      -- This is the correct Factorio 2.0 API method
-      local requester_point = entity.get_requester_point()
+      local has_logistics = false
 
-      if requester_point ~= nil then
+      -- Check if entity has logistics capability
+      -- Use get_section_manager which safely handles the pcall internally
+      local section_manager = logistics_utils.get_section_manager(entity)
+      if section_manager then
         table.insert(logistics_entities, entity)
       end
     end
+
   end
 
   return logistics_entities

@@ -21,23 +21,41 @@ local logistics_utils = {}
 -- ENTITY CAPABILITY DETECTION
 -- =============================================================================
 
---- Check if entity supports logistics control
--- @param entity LuaEntity: Entity to check
--- @return boolean: True if entity has logistic_sections property
+--- Get the logistics section manager for an entity
+-- Returns the object that has add_section/remove_section/sections methods
+-- For most entities this is requester_point, for constant combinators it's control_behavior
+-- @param entity LuaEntity: Entity to get section manager from
+-- @return table|nil: Object with sections array and add_section/remove_section methods
+-- @return string: Type of manager ("requester_point" or "control_behavior")
 --
 -- USAGE:
--- if logistics_utils.supports_logistics_control(entity) then
---   -- Safe to call injection/removal functions
+-- local manager, manager_type = logistics_utils.get_section_manager(entity)
+-- if manager then
+--   local sections = manager.sections
+--   local new_section = manager.add_section()
 -- end
-function logistics_utils.supports_logistics_control(entity)
+function logistics_utils.get_section_manager(entity)
   if not entity or not entity.valid then
-    return false
+    return nil, nil
   end
 
-  -- Check if entity has a requester point (logistics capability)
-  -- This includes: cargo landing pads, inserters, assemblers, cargo bays, etc.
+  -- Try requester point first (most common)
   local requester_point = entity.get_requester_point()
-  return requester_point ~= nil
+  if requester_point then
+    return requester_point, "requester_point"
+  end
+
+  -- Fallback: control behaviors with sections (e.g., constant combinators)
+  -- Use pcall because accessing .sections on userdata throws if property doesn't exist
+  local control_behavior = entity.get_control_behavior()
+  if control_behavior then
+    local success, sections = pcall(function() return control_behavior.sections end)
+    if success and sections then
+      return control_behavior, "control_behavior"
+    end
+  end
+
+  return nil, nil
 end
 
 -- =============================================================================
@@ -97,20 +115,16 @@ end
 --   game.print("Entity already has fuel-request group at section " .. section_idx)
 -- end
 function logistics_utils.has_logistics_group(entity, group_name)
-  if not logistics_utils.supports_logistics_control(entity) then
-    return false, nil
-  end
-
   if not group_name or group_name == "" then
     return false, nil
   end
 
-  local requester_point = entity.get_requester_point()
-  if not requester_point then
+  local section_manager = logistics_utils.get_section_manager(entity)
+  if not section_manager then
     return false, nil
   end
 
-  local sections = requester_point.sections
+  local sections = section_manager.sections
 
   -- Iterate through all sections
   for i = 1, #sections do
@@ -149,10 +163,6 @@ end
 -- end
 function logistics_utils.inject_logistics_group(entity, group_name, combinator_id)
   -- Validate inputs
-  if not logistics_utils.supports_logistics_control(entity) then
-    return nil, "Entity does not support logistics control"
-  end
-
   if not group_name or group_name == "" then
     return nil, "Group name cannot be empty"
   end
@@ -161,13 +171,13 @@ function logistics_utils.inject_logistics_group(entity, group_name, combinator_i
     return nil, "Combinator ID required for tracking"
   end
 
-  -- Get requester point and create new logistics section
-  local requester_point = entity.get_requester_point()
-  if not requester_point then
-    return nil, "Entity does not have a requester point"
+  -- Get section manager (requester_point or control_behavior for constant combinators)
+  local section_manager = logistics_utils.get_section_manager(entity)
+  if not section_manager then
+    return nil, "Entity does not support logistics control"
   end
 
-  local new_section = requester_point.add_section()
+  local new_section = section_manager.add_section()
 
   if not new_section then
     return nil, "Failed to create logistics section"
@@ -182,7 +192,7 @@ function logistics_utils.inject_logistics_group(entity, group_name, combinator_i
   -- new_section.metadata = {combinator_id = combinator_id}  -- Not available in API
 
   -- Return the section index (1-based)
-  local section_index = #requester_point.sections
+  local section_index = #section_manager.sections
 
   return section_index, nil
 end
@@ -211,21 +221,17 @@ end
 --   -- Caller must update storage.injected_groups
 -- end
 function logistics_utils.remove_logistics_group(entity, group_name, combinator_id, tracking_data)
-  if not logistics_utils.supports_logistics_control(entity) then
-    return false, 0
-  end
-
   if not group_name or group_name == "" then
     return false, 0
   end
 
-  local requester_point = entity.get_requester_point()
-  if not requester_point then
+  local section_manager = logistics_utils.get_section_manager(entity)
+  if not section_manager then
     return false, 0
   end
 
   tracking_data = tracking_data or {}
-  local sections = requester_point.sections
+  local sections = section_manager.sections
   local removed_count = 0
 
   -- Iterate backwards to safely remove sections
@@ -239,7 +245,7 @@ function logistics_utils.remove_logistics_group(entity, group_name, combinator_i
 
       if injected_by == combinator_id then
         -- Remove the section
-        requester_point.remove_section(i)
+        section_manager.remove_section(i)
         removed_count = removed_count + 1
       end
     end
@@ -334,15 +340,15 @@ function logistics_utils.cleanup_combinator_groups(combinator_id, tracking_data)
     end
 
     -- If entity found, remove sections injected by this combinator
-    if entity and entity.valid and logistics_utils.supports_logistics_control(entity) then
-      local requester_point = entity.get_requester_point()
-      if requester_point then
-        local sections = requester_point.sections
+    if entity and entity.valid then
+      local section_manager = logistics_utils.get_section_manager(entity)
+      if section_manager then
+        local sections = section_manager.sections
 
         -- Iterate backwards to safely remove
         for section_idx = #sections, 1, -1 do
           if entity_sections[section_idx] == combinator_id then
-            requester_point.remove_section(section_idx)
+            section_manager.remove_section(section_idx)
             total_removed = total_removed + 1
           end
         end
@@ -366,27 +372,23 @@ end
 -- local removed_count = logistics_utils.cleanup_entity_groups(entity, tracking)
 -- game.print("Cleaned up " .. removed_count .. " injected groups from entity")
 -- -- Caller must clear tracking data: storage.injected_groups[entity.unit_number] = nil
-function logistics_utils.cleanup_entity_groups(entity, tracking_data)     
-  if not logistics_utils.supports_logistics_control(entity) then
-    return 0
-  end
-
+function logistics_utils.cleanup_entity_groups(entity, tracking_data)
   if not tracking_data then
     return 0
   end
 
-  local requester_point = entity.get_requester_point()
-  if not requester_point then
+  local section_manager = logistics_utils.get_section_manager(entity)
+  if not section_manager then
     return 0
   end
 
-  local sections = requester_point.sections
+  local sections = section_manager.sections
   local removed_count = 0
 
   -- Iterate backwards to safely remove sections
   for section_idx = #sections, 1, -1 do
     if tracking_data[section_idx] then
-      requester_point.remove_section(section_idx)
+      section_manager.remove_section(section_idx)
       removed_count = removed_count + 1
     end
   end

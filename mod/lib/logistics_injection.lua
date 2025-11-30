@@ -92,17 +92,13 @@ function logistics_injection.inject_group(combinator_unit_number, target_entity,
         return false  -- Entity destroyed
     end
 
-    -- Check if entity has logistics capability (safe check)
-    if not logistics_utils.supports_logistics_control(target_entity) then
-        return false  -- Not a logistics-capable entity
+    -- Get section manager (requester_point or control_behavior for constant combinators)
+    local section_manager = logistics_utils.get_section_manager(target_entity)
+    if not section_manager then
+        return false  -- Entity doesn't support logistics control
     end
 
-    local requester_point = target_entity.get_requester_point()
-    if not requester_point then
-        return false  -- Entity doesn't have requester point
-    end
-
-    local sections = requester_point.sections
+    local sections = section_manager.sections
     local multiplier = section_data.multiplier or 1.0
 
     -- Find the LAST section matching {group_name, multiplier} tuple
@@ -135,7 +131,7 @@ function logistics_injection.inject_group(combinator_unit_number, target_entity,
     end
 
     -- IMPORTANT: Reload sections after injection to get the updated list
-    local updated_sections = requester_point.sections
+    local updated_sections = section_manager.sections
 
     -- Apply multiplier to the newly created section
     if section_index <= #updated_sections then
@@ -173,17 +169,13 @@ function logistics_injection.remove_group(combinator_unit_number, target_entity,
         return false  -- Entity destroyed
     end
 
-    -- Check if entity has logistics capability
-    if not logistics_utils.supports_logistics_control(target_entity) then
-        return false
+    -- Get section manager (requester_point or control_behavior for constant combinators)
+    local section_manager = logistics_utils.get_section_manager(target_entity)
+    if not section_manager then
+        return false  -- Entity doesn't support logistics control
     end
 
-    local requester_point = target_entity.get_requester_point()
-    if not requester_point then
-        return false
-    end
-
-    local sections = requester_point.sections
+    local sections = section_manager.sections
     local multiplier = section_data.multiplier or 1.0
 
     -- Find the LAST section matching {group_name, multiplier} tuple
@@ -202,7 +194,7 @@ function logistics_injection.remove_group(combinator_unit_number, target_entity,
     end
 
     -- Remove the section
-    requester_point.remove_section(section_to_remove)
+    section_manager.remove_section(section_to_remove)
 
     return true
 end
