@@ -60,70 +60,26 @@ function logistics_combinator_control.on_removed(entity)
     end
 end
 
---- Handle wire connection added
---- @param event EventData Wire added event
-function logistics_combinator_control.on_wire_added(event)
-    -- TODO: Implement wire connection handler
-    -- Check if wire connected to a logistics combinator
-    -- Update connected entities cache
-
-    local entity = event.entity
-    if entity and entity.valid and entity.name == "logistics-combinator" then
-        logistics_combinator.update_connected_entities(entity.unit_number)
+--- Called every 90 ticks (1.5 seconds) to update wire connections
+--- Wire events don't exist in Factorio API - use polling instead
+function logistics_combinator_control.on_tick_90()
+    if not storage.logistics_combinators then
+        return
+    end
+    for unit_number, combinator_data in pairs(storage.logistics_combinators) do
+        if combinator_data.entity and combinator_data.entity.valid then
+            logistics_combinator.update_connected_entities(unit_number)
+        end
     end
 end
 
---- Handle wire connection removed
---- @param event EventData Wire removed event
-function logistics_combinator_control.on_wire_removed(event)
-    -- TODO: Implement wire disconnection handler
-    -- Check if wire disconnected from a logistics combinator
-    -- Update connected entities cache
-    -- May need to remove injected groups if entity no longer connected
-
-    local entity = event.entity
-    if entity and entity.valid and entity.name == "logistics-combinator" then
-        logistics_combinator.update_connected_entities(entity.unit_number)
-        -- TODO: Check if any entities lost connection and cleanup their injected groups
+--- Called every 15 ticks (250ms) to process conditions and inject/remove logistics sections
+function logistics_combinator_control.on_tick_15()
+    if not storage.logistics_combinators then
+        return
     end
-end
 
---- Register module-specific event handlers (periodic ticks only)
---- Entity lifecycle events are registered centrally in control.lua to avoid last-registration-wins problem
-function logistics_combinator_control.register_events()
-    -- NOTE: Entity lifecycle events (on_built_entity, on_robot_built_entity, etc.)
-    -- are registered centrally in control.lua and routed to on_built/on_removed
-    -- This function only registers periodic tick events specific to this module
-
-    -- Wire events don't exist in Factorio API - use polling instead
-    -- Connection changes are detected by periodic polling in on_nth_tick(90)
-
-    -- NOTE: GUI events are registered centrally in control.lua to avoid conflicts
-    -- The central dispatcher routes events based on entity type and player GUI state
-
-    -- Periodic connection update (every 90 ticks = 1.5 seconds)
-    -- Detects wire changes via polling (no native wire events available)
-    script.on_nth_tick(90, function()
-        if not storage.logistics_combinators then
-            return
-        end
-
-        for unit_number, combinator_data in pairs(storage.logistics_combinators) do
-            if combinator_data.entity and combinator_data.entity.valid then
-                logistics_combinator.update_connected_entities(unit_number)
-            end
-        end
-    end)
-
-    -- Periodic condition processing (every 15 ticks = 250ms)
-    -- Evaluates conditions and injects/removes logistics sections
-    script.on_nth_tick(15, function()
-        if not storage.logistics_combinators then
-            return
-        end
-
-        logistics_combinator.process_all_combinators()
-    end)
+    logistics_combinator.process_all_combinators()
 end
 
 --- Initialize on mod load

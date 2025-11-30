@@ -212,10 +212,23 @@ script.on_event(defines.events.script_raised_destroy, function(event)
     end
 end)
 
--- Register module-specific event handlers (periodic ticks, etc.)
--- Entity lifecycle events are handled above to avoid last-registration-wins problem
-logistics_combinator_control.register_events()
-logistics_chooser_control.register_events()
+--------------------------------------------------------------------------------
+-- CENTRALIZED ON_NTH_TICK REGISTRATION
+-- Factorio only allows one handler per tick interval, so we register here
+-- and dispatch to all entity modules that need that interval
+--------------------------------------------------------------------------------
+
+-- Every 90 ticks (1.5 seconds): Update wire connections via polling
+script.on_nth_tick(90, function()
+    logistics_combinator_control.on_tick_90()
+    logistics_chooser_control.on_tick_90()
+end)
+
+-- Every 15 ticks (250ms): Process conditions and inject/remove logistics sections
+script.on_nth_tick(15, function()
+    logistics_combinator_control.on_tick_15()
+    logistics_chooser_control.on_tick_15()
+end)
 
 --------------------------------------------------------------------------------
 -- GUI EVENT REGISTRATION
@@ -404,11 +417,9 @@ script.on_event("logistics-combinator-pipette-signal", function(event)
     end
 end)
 
--- Main update cycles
--- These are registered within their respective control modules
--- - 15-tick update for signal transmission (network_manager)
--- - 15-tick update for logistics combinator processing
--- - 60-tick update for platform connection status (network_manager)
+-- Main update cycles (registered in CENTRALIZED ON_NTH_TICK REGISTRATION section above)
+-- - 15-tick update for logistics combinator/chooser condition processing
+-- - 90-tick update for wire connection polling
 
 -- Remote interface for debugging and mod integration (optional)
 remote.add_interface("mission_control", {

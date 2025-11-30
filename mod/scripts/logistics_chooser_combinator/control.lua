@@ -56,39 +56,27 @@ function logistics_chooser_control.on_removed(entity)
     end
 end
 
---- Register module-specific event handlers (periodic ticks only)
---- Entity lifecycle events are registered centrally in control.lua to avoid last-registration-wins problem
-function logistics_chooser_control.register_events()
-    -- NOTE: Entity lifecycle events (on_built_entity, on_robot_built_entity, etc.)
-    -- are registered centrally in control.lua and routed to on_built/on_removed
-    -- This function only registers periodic tick events specific to this module
+--- Called every 90 ticks (1.5 seconds) to update wire connections
+--- Wire events don't exist in Factorio API - use polling instead
+function logistics_chooser_control.on_tick_90()
+    if not storage.logistics_choosers then
+        return
+    end
 
-    -- NOTE: GUI events are registered centrally in control.lua to avoid conflicts
-    -- The central dispatcher routes events based on entity type and player GUI state
-
-    -- Periodic connection update (every 90 ticks = 1.5 seconds)
-    -- Detects wire changes via polling (no native wire events available)
-    script.on_nth_tick(90, function()
-        if not storage.logistics_choosers then
-            return
+    for unit_number, chooser_data in pairs(storage.logistics_choosers) do
+        if chooser_data.entity and chooser_data.entity.valid then
+            logistics_chooser.update_connected_entities(unit_number)
         end
+    end
+end
 
-        for unit_number, chooser_data in pairs(storage.logistics_choosers) do
-            if chooser_data.entity and chooser_data.entity.valid then
-                logistics_chooser.update_connected_entities(unit_number)
-            end
-        end
-    end)
+--- Called every 15 ticks (250ms) to process conditions and inject/remove logistics sections
+function logistics_chooser_control.on_tick_15()
+    if not storage.logistics_choosers then
+        return
+    end
 
-    -- Periodic group processing (every 15 ticks = 250ms)
-    -- Evaluates conditions and injects/removes logistics sections
-    script.on_nth_tick(15, function()
-        if not storage.logistics_choosers then
-            return
-        end
-
-        logistics_chooser.process_all_choosers()
-    end)
+    logistics_chooser.process_all_choosers()
 end
 
 --- Initialize on mod load
