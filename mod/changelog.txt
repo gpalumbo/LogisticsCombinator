@@ -1,6 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.2.3
+Date: 2025-11-30
+  Bug Fixes:
+    - Left side of condition handles Anything and Everything signals. 'Each' is disallowed
+    - Right side of condition all aggregate virtual signals are disallowed
+    - Having trouble with elem_chooser_button filter, so I can't hide the options, but 
+      instead generate a message if the disallowed signals are chosen.
+---------------------------------------------------------------------------------------------------
 Version: 0.2.2
-Date: 2025-11-24
+Date: 2025-11-28
   Bug Fixes:
     - Logistics combinator not updating container on wire attachment as chooser does.
     - Connecting to output terminals doen't update the target.

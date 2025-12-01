@@ -1018,6 +1018,18 @@ function logistics_combinator_gui.on_gui_elem_changed(event)
         local condition_index = tonumber(left_signal_index)
         local condition = get_condition_by_index(combinator_data, condition_index)
         if condition then
+            -- Validate signal - reject "Each" signal
+            local error_key = gui_utils.validate_condition_signal(element.elem_value)
+            if error_key then
+                -- Clear the invalid selection and notify player
+                element.elem_value = condition.left_signal  -- Revert to previous value
+                player.create_local_flying_text{
+                    text = {error_key},
+                    position = player.position,
+                    create_at_cursor = true
+                }
+                return
+            end
             condition.left_signal = element.elem_value
             combinator_data.conditions[condition_index] = condition
             globals.update_combinator_data_universal(entity, combinator_data)
@@ -1032,6 +1044,18 @@ function logistics_combinator_gui.on_gui_elem_changed(event)
         local condition_index = tonumber(right_signal_index)
         local condition = get_condition_by_index(combinator_data, condition_index)
         if condition then
+            -- Validate signal - only NORMAL signals allowed on right side
+            local error_key = gui_utils.validate_right_signal(element.elem_value)
+            if error_key then
+                -- Clear the invalid selection and notify player
+                element.elem_value = condition.right_signal  -- Revert to previous value
+                player.create_local_flying_text{
+                    text = {error_key},
+                    position = player.position,
+                    create_at_cursor = true
+                }
+                return
+            end
             condition.right_signal = element.elem_value
             combinator_data.conditions[condition_index] = condition
             globals.update_combinator_data_universal(entity, combinator_data)

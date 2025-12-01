@@ -34,6 +34,14 @@ local STATUS_ICONS = {
   warning = "[img=utility/warning_icon]"
 }
 
+-- Signal evaluation types for special handling of aggregate signals
+local SIGNAL_EVAL_TYPE = {
+  NORMAL = "normal",         -- Standard signal comparison
+  EACH = "each",             -- Not supported in conditions
+  ANYTHING = "anything",     -- TRUE if ANY signal matches condition
+  EVERYTHING = "everything"  -- TRUE if ALL signals match condition
+}
+
 function find_child_recursive(element, name)
     if element.name == name then
         return element
@@ -45,6 +53,53 @@ function find_child_recursive(element, name)
         end
     end
     return nil
+end
+
+-- ==============================================================================
+-- VIRTUAL SIGNAL EVALUATION TYPE
+-- ==============================================================================
+
+--- Determine the evaluation type for a signal
+-- Returns the appropriate SIGNAL_EVAL_TYPE based on the signal
+-- @param signal SignalID: The signal to check {type=string, name=string}
+-- @return string: One of SIGNAL_EVAL_TYPE values (NORMAL, EACH, ANYTHING, EVERYTHING)
+function get_signal_eval_type(signal)
+    if not signal then return SIGNAL_EVAL_TYPE.NORMAL end
+    if signal.type ~= "virtual" then return SIGNAL_EVAL_TYPE.NORMAL end
+
+    if signal.name == "signal-each" then
+        return SIGNAL_EVAL_TYPE.EACH
+    elseif signal.name == "signal-anything" then
+        return SIGNAL_EVAL_TYPE.ANYTHING
+    elseif signal.name == "signal-everything" then
+        return SIGNAL_EVAL_TYPE.EVERYTHING
+    end
+
+    return SIGNAL_EVAL_TYPE.NORMAL
+end
+
+--- Validate a signal for use in conditions
+-- Returns nil if valid, or an error message key if invalid
+-- @param signal SignalID: The signal to validate
+-- @return string|nil: Locale key for error message, or nil if valid
+function validate_condition_signal(signal)
+    local eval_type = get_signal_eval_type(signal)
+    if eval_type == SIGNAL_EVAL_TYPE.EACH then
+        return "gui.signal-each-not-supported"
+    end
+    return nil  -- NORMAL, Everything, and Anything are valid
+end
+
+--- Validate a signal for use on the RIGHT side of conditions
+-- Only NORMAL signals are allowed on the right side (no ANYTHING, EVERYTHING, EACH)
+-- @param signal SignalID: The signal to validate
+-- @return string|nil: Locale key for error message, or nil if valid
+function validate_right_signal(signal)
+    local eval_type = get_signal_eval_type(signal)
+    if eval_type ~= SIGNAL_EVAL_TYPE.NORMAL then
+        return "gui.special-signal-not-allowed-right"
+    end
+    return nil  -- Only NORMAL signals are valid on right side
 end
 
 --- Compare two values with an operator
@@ -564,9 +619,13 @@ function evaluate_condition(signals, condition)
   if not signals or not condition then return false end
   if not condition.signal or not condition.operator then return false end
 
-  -- Get left-hand value (the signal being checked)
-  local signal_key = get_signal_key(condition.signal)
-  local left_value = signals[signal_key] or 0
+  -- Check for aggregate signal types (Everything, Anything, Each)
+  local eval_type = get_signal_eval_type(condition.signal)
+
+  -- Each signal is not supported - return false
+  if eval_type == SIGNAL_EVAL_TYPE.EACH then
+    return false
+  end
 
   -- Get right-hand value (constant or another signal)
   local right_value
@@ -579,8 +638,76 @@ function evaluate_condition(signals, condition)
     right_value = condition.value or 0
   end
 
-  -- Perform comparison based on operator
   local operator = condition.operator
+
+  -- Handle EVERYTHING: ALL non-zero signals must satisfy condition
+  if eval_type == SIGNAL_EVAL_TYPE.EVERYTHING then
+    local has_signals = false
+    for _, value in pairs(signals) do
+      has_signals = true
+      if not compare_values(value, right_value, operator) then
+        return false  -- Any failure means false
+      end
+    end
+    return has_signals  -- False if no signals at all
+  end
+
+  -- Handle ANYTHING: AT LEAST ONE signal must satisfy condition
+  if eval_type == SIGNAL_EVAL_TYPE.ANYTHING then
+    for _, value in pairs(signals) do
+      if compare_values(value, right_value, operator) then
+        return true  -- Any match means true
+      end
+    end
+    return false  -- No matches
+  end
+
+  -- NORMAL: Standard single signal comparison
+  local signal_key = get_signal_key(condition.signal)
+  local left_value = signals[signal_key] or 0
+  return compare_values(left_value, right_value, operator)
+end
+
+--- Evaluate a single condition with aggregate signal support (shared by both combinators)
+-- Handles EVERYTHING, ANYTHING, EACH, and NORMAL signal types
+-- @param left_signals table: Signals to evaluate {[signal_key] = value}
+-- @param left_signal SignalID: The left signal (may be aggregate)
+-- @param operator string: Comparison operator
+-- @param right_value number: The right-hand value to compare against
+-- @return boolean: Result of the condition evaluation
+function evaluate_single_condition_with_aggregates(left_signals, left_signal, operator, right_value)
+  local eval_type = get_signal_eval_type(left_signal)
+
+  -- Each signal is not supported - treat as false
+  if eval_type == SIGNAL_EVAL_TYPE.EACH then
+    return false
+  end
+
+  -- EVERYTHING: ALL non-zero signals must satisfy condition
+  if eval_type == SIGNAL_EVAL_TYPE.EVERYTHING then
+    local has_signals = false
+    for _, value in pairs(left_signals) do
+      has_signals = true
+      if not compare_values(value, right_value, operator) then
+        return false
+      end
+    end
+    return has_signals  -- False if no signals at all
+  end
+
+  -- ANYTHING: AT LEAST ONE signal must satisfy condition
+  if eval_type == SIGNAL_EVAL_TYPE.ANYTHING then
+    for _, value in pairs(left_signals) do
+      if compare_values(value, right_value, operator) then
+        return true
+      end
+    end
+    return false
+  end
+
+  -- NORMAL: Standard single signal comparison
+  local left_key = get_signal_key(left_signal)
+  local left_value = left_signals[left_key] or 0
   return compare_values(left_value, right_value, operator)
 end
 
@@ -632,10 +759,6 @@ function evaluate_complex_conditions(conditions, red_signals, green_signals)
     -- Get signals for left side based on wire filter
     local left_signals = get_filtered_signals_from_tables(red_signals, green_signals, cond.left_wire_filter)
 
-    -- Get left signal value
-    local left_key = get_signal_key(cond.left_signal)
-    local left_value = left_signals[left_key] or 0
-
     -- Get right signal value
     local right_value
     if cond.right_type == "signal" then
@@ -646,8 +769,10 @@ function evaluate_complex_conditions(conditions, red_signals, green_signals)
       right_value = cond.right_value or 0
     end
 
-    -- Evaluate this condition
-    local cond_result = compare_values(left_value, right_value, cond.operator)
+    -- Evaluate this condition using shared helper (handles aggregate signals)
+    local cond_result = evaluate_single_condition_with_aggregates(
+      left_signals, cond.left_signal, cond.operator, right_value
+    )
 
     table.insert(evaluated_conditions, {
       result = cond_result,
@@ -897,6 +1022,10 @@ return {
   populate_operator_dropdown = populate_operator_dropdown,
   get_operator_from_index = get_operator_from_index,
   get_index_from_operator = get_index_from_operator,
+
+  -- Signal validation
+  validate_condition_signal = validate_condition_signal,
+  validate_right_signal = validate_right_signal,
 
   -- Condition evaluation
   evaluate_condition = evaluate_condition,
