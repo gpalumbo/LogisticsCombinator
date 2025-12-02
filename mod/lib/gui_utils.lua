@@ -78,28 +78,42 @@ function get_signal_eval_type(signal)
     return SIGNAL_EVAL_TYPE.NORMAL
 end
 
---- Validate a signal for use in conditions
--- Returns nil if valid, or an error message key if invalid
+--- Validate a signal for use in LEFT side of conditions
+-- All signal types are valid on the left side (NORMAL, EACH, ANYTHING, EVERYTHING)
 -- @param signal SignalID: The signal to validate
 -- @return string|nil: Locale key for error message, or nil if valid
 function validate_condition_signal(signal)
-    local eval_type = get_signal_eval_type(signal)
-    if eval_type == SIGNAL_EVAL_TYPE.EACH then
-        return "gui.signal-each-not-supported"
-    end
-    return nil  -- NORMAL, Everything, and Anything are valid
+    -- All signal types are now valid on the left side
+    return nil
 end
 
 --- Validate a signal for use on the RIGHT side of conditions
--- Only NORMAL signals are allowed on the right side (no ANYTHING, EVERYTHING, EACH)
+-- NORMAL signals are always allowed
+-- EACH is only allowed if the left side is also EACH
+-- ANYTHING and EVERYTHING are never allowed on the right side
 -- @param signal SignalID: The signal to validate
+-- @param left_signal SignalID: The left side signal (to check if EACH is allowed)
 -- @return string|nil: Locale key for error message, or nil if valid
-function validate_right_signal(signal)
+function validate_right_signal(signal, left_signal)
     local eval_type = get_signal_eval_type(signal)
-    if eval_type ~= SIGNAL_EVAL_TYPE.NORMAL then
-        return "gui.special-signal-not-allowed-right"
+
+    -- NORMAL signals are always valid on right side
+    if eval_type == SIGNAL_EVAL_TYPE.NORMAL then
+        return nil
     end
-    return nil  -- Only NORMAL signals are valid on right side
+
+    -- EACH is valid on right side ONLY if left side is also EACH
+    if eval_type == SIGNAL_EVAL_TYPE.EACH then
+        local left_eval_type = get_signal_eval_type(left_signal)
+        if left_eval_type == SIGNAL_EVAL_TYPE.EACH then
+            return nil  -- EACH on right is valid when left is EACH
+        else
+            return "gui.each-right-requires-each-left"
+        end
+    end
+
+    -- ANYTHING and EVERYTHING are never valid on right side
+    return "gui.special-signal-not-allowed-right"
 end
 
 --- Compare two values with an operator
@@ -673,14 +687,32 @@ end
 -- @param left_signals table: Signals to evaluate {[signal_key] = value}
 -- @param left_signal SignalID: The left signal (may be aggregate)
 -- @param operator string: Comparison operator
--- @param right_value number: The right-hand value to compare against
+-- @param right_value number: The right-hand value to compare against (for constant or normal signal)
+-- @param right_signals table: Optional - signals for right side (needed when right is EACH)
+-- @param right_signal SignalID: Optional - the right signal (to detect EACH)
 -- @return boolean: Result of the condition evaluation
-function evaluate_single_condition_with_aggregates(left_signals, left_signal, operator, right_value)
+function evaluate_single_condition_with_aggregates(left_signals, left_signal, operator, right_value, right_signals, right_signal)
   local eval_type = get_signal_eval_type(left_signal)
+  local right_eval_type = get_signal_eval_type(right_signal)
 
-  -- Each signal is not supported - treat as false
+  -- EACH on left side: iterate through all left signals
+  -- TRUE if ANY signal satisfies the condition
   if eval_type == SIGNAL_EVAL_TYPE.EACH then
-    return false
+    for signal_key, left_value in pairs(left_signals) do
+      local compare_value
+      if right_eval_type == SIGNAL_EVAL_TYPE.EACH then
+        -- EACH vs EACH: compare same signal on both sides
+        compare_value = (right_signals and right_signals[signal_key]) or 0
+      else
+        -- EACH vs constant/normal signal: use the provided right_value
+        compare_value = right_value
+      end
+
+      if compare_values(left_value, compare_value, operator) then
+        return true  -- Any match means true
+      end
+    end
+    return false  -- No matches
   end
 
   -- EVERYTHING: ALL non-zero signals must satisfy condition
@@ -759,19 +791,20 @@ function evaluate_complex_conditions(conditions, red_signals, green_signals)
     -- Get signals for left side based on wire filter
     local left_signals = get_filtered_signals_from_tables(red_signals, green_signals, cond.left_wire_filter)
 
-    -- Get right signal value
+    -- Get right signal value and signals (needed for EACH on right side)
     local right_value
+    local right_signals_filtered = nil
     if cond.right_type == "signal" then
-      local right_signals = get_filtered_signals_from_tables(red_signals, green_signals, cond.right_wire_filter)
+      right_signals_filtered = get_filtered_signals_from_tables(red_signals, green_signals, cond.right_wire_filter)
       local right_key = get_signal_key(cond.right_signal)
-      right_value = right_signals[right_key] or 0
+      right_value = right_signals_filtered[right_key] or 0
     else
       right_value = cond.right_value or 0
     end
 
-    -- Evaluate this condition using shared helper (handles aggregate signals)
+    -- Evaluate this condition using shared helper (handles aggregate signals including EACH)
     local cond_result = evaluate_single_condition_with_aggregates(
-      left_signals, cond.left_signal, cond.operator, right_value
+      left_signals, cond.left_signal, cond.operator, right_value, right_signals_filtered, cond.right_signal
     )
 
     table.insert(evaluated_conditions, {
@@ -1026,6 +1059,7 @@ return {
   -- Signal validation
   validate_condition_signal = validate_condition_signal,
   validate_right_signal = validate_right_signal,
+  get_signal_eval_type = get_signal_eval_type,
 
   -- Condition evaluation
   evaluate_condition = evaluate_condition,

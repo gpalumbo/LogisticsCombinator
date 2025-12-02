@@ -1,11 +1,14 @@
 ---------------------------------------------------------------------------------------------------
 Version: 0.2.3
 Date: 2025-11-30
-  Bug Fixes:
-    - Left side of condition handles Anything and Everything signals. 'Each' is disallowed
-    - Right side of condition all aggregate virtual signals are disallowed
-    - Having trouble with elem_chooser_button filter, so I can't hide the options, but 
-      instead generate a message if the disallowed signals are chosen.
+  Minor Feature:
+    - Left hand side of condition handles Each, Anything and Everything signals
+    - Right hand side of condition Anything and Everything signals are disallowed. Each is only 
+      allowed when Each is already set of the LHS.
+    - Each will compare each signal for the condition and if ANY are true the condition will be true
+      Probalby most beneficial comparing red to green, otehrwise Any or Every would be more suitable.
+    - Having trouble with elem_chooser_button filter, so I can't hide the signal options, so 
+      instead I generate a message if the disallowed signals are chosen and reset the button
 ---------------------------------------------------------------------------------------------------
 Version: 0.2.2
 Date: 2025-11-28

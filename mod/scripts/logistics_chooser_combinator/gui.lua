@@ -842,11 +842,12 @@ function logistics_chooser_gui.on_gui_elem_changed(event)
     if left_signal_index then
         local group_index = tonumber(left_signal_index)
         if chooser_data.groups and chooser_data.groups[group_index] then
-            -- Validate signal - reject "Each" signal
+            local condition = chooser_data.groups[group_index].condition
+            -- Validate signal (all types are valid on left side now)
             local error_key = gui_utils.validate_condition_signal(element.elem_value)
             if error_key then
                 -- Revert to previous value and notify player
-                element.elem_value = chooser_data.groups[group_index].condition.left_signal
+                element.elem_value = condition.left_signal
                 player.create_local_flying_text{
                     text = {error_key},
                     position = player.position,
@@ -854,7 +855,27 @@ function logistics_chooser_gui.on_gui_elem_changed(event)
                 }
                 return
             end
-            chooser_data.groups[group_index].condition.left_signal = element.elem_value
+
+            -- If left side changed FROM EACH to something else, and right side is EACH,
+            -- we need to clear the right signal (EACH on right is only valid with EACH on left)
+            local old_left_type = gui_utils.get_signal_eval_type(condition.left_signal)
+            local new_left_type = gui_utils.get_signal_eval_type(element.elem_value)
+            local right_type = gui_utils.get_signal_eval_type(condition.right_signal)
+
+            if old_left_type == "each" and new_left_type ~= "each" and right_type == "each" then
+                -- Clear the right signal since EACH is no longer valid there
+                condition.right_signal = nil
+                -- Update the GUI element if it exists
+                local gui_root = player.gui.screen[GUI_NAMES.MAIN_FRAME]
+                if gui_root then
+                    local right_signal_elem = gui_utils.find_child_recursive(gui_root, "cond_" .. group_index .. "_right_signal")
+                    if right_signal_elem and right_signal_elem.valid then
+                        right_signal_elem.elem_value = nil
+                    end
+                end
+            end
+
+            condition.left_signal = element.elem_value
             globals.update_chooser_group_universal(entity, group_index, chooser_data.groups[group_index])
             -- Re-evaluate conditions
             evaluate_and_update_statuses(player, chooser_data, entity)
@@ -867,11 +888,12 @@ function logistics_chooser_gui.on_gui_elem_changed(event)
     if right_signal_index then
         local group_index = tonumber(right_signal_index)
         if chooser_data.groups and chooser_data.groups[group_index] then
-            -- Validate signal - only NORMAL signals allowed on right side
-            local error_key = gui_utils.validate_right_signal(element.elem_value)
+            local condition = chooser_data.groups[group_index].condition
+            -- Validate signal - NORMAL always allowed, EACH only if left is EACH
+            local error_key = gui_utils.validate_right_signal(element.elem_value, condition.left_signal)
             if error_key then
                 -- Clear the invalid selection and notify player
-                element.elem_value = chooser_data.groups[group_index].condition.right_signal  -- Revert to previous value
+                element.elem_value = condition.right_signal  -- Revert to previous value
                 player.create_local_flying_text{
                     text = {error_key},
                     position = player.position,
@@ -879,7 +901,7 @@ function logistics_chooser_gui.on_gui_elem_changed(event)
                 }
                 return
             end
-            chooser_data.groups[group_index].condition.right_signal = element.elem_value
+            condition.right_signal = element.elem_value
             globals.update_chooser_group_universal(entity, group_index, chooser_data.groups[group_index])
             -- Re-evaluate conditions
             evaluate_and_update_statuses(player, chooser_data, entity)
