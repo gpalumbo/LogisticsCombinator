@@ -381,4 +381,302 @@ end
   /c local su = require("lib.signal_utils"); [add test assertions]
 --]]
 
+-- ==============================================================================
+-- SIGNAL EVALUATION TYPES
+-- ==============================================================================
+
+-- Signal evaluation types for special handling of aggregate signals
+local SIGNAL_EVAL_TYPE = {
+  NORMAL = "normal",         -- Standard signal comparison
+  EACH = "each",             -- Iterate through all signals
+  ANYTHING = "anything",     -- TRUE if ANY signal matches condition
+  EVERYTHING = "everything"  -- TRUE if ALL signals match condition
+}
+
+--- Determine the evaluation type for a signal
+-- Returns the appropriate SIGNAL_EVAL_TYPE based on the signal
+-- @param signal SignalID: The signal to check {type=string, name=string}
+-- @return string: One of SIGNAL_EVAL_TYPE values (NORMAL, EACH, ANYTHING, EVERYTHING)
+function signal_utils.get_signal_eval_type(signal)
+  if not signal then return SIGNAL_EVAL_TYPE.NORMAL end
+  if signal.type ~= "virtual" then return SIGNAL_EVAL_TYPE.NORMAL end
+
+  if signal.name == "signal-each" then
+    return SIGNAL_EVAL_TYPE.EACH
+  elseif signal.name == "signal-anything" then
+    return SIGNAL_EVAL_TYPE.ANYTHING
+  elseif signal.name == "signal-everything" then
+    return SIGNAL_EVAL_TYPE.EVERYTHING
+  end
+
+  return SIGNAL_EVAL_TYPE.NORMAL
+end
+
+--- Get signal key for table lookup
+-- Converts signal definition to string key for consistent lookups
+-- @param signal table: {type = "item"|"fluid"|"virtual", name = "signal-name"}
+-- @return string: Key for signal table lookup (format: "type:name")
+function signal_utils.get_signal_key(signal)
+  if not signal or not signal.name then return "" end
+  local signal_type = signal.type or "item"  -- Default to "item" if type not specified
+  -- Use type:name format to distinguish between item/fluid/virtual signals with same name
+  return signal_type .. ":" .. signal.name
+end
+
+--- Compare two values with an operator
+-- Helper function for condition evaluation
+-- @param left number: Left-hand value
+-- @param right number: Right-hand value
+-- @param operator string: Comparison operator (<, >, =, ≠, ≤, ≥)
+-- @return boolean: Result of comparison
+function signal_utils.compare_values(left, right, operator)
+  if operator == "<" then
+    return left < right
+  elseif operator == ">" then
+    return left > right
+  elseif operator == "=" then
+    return left == right
+  elseif operator == "≠" then
+    return left ~= right
+  elseif operator == "≤" then
+    return left <= right
+  elseif operator == "≥" then
+    return left >= right
+  else
+    return false  -- Unknown operator
+  end
+end
+
+--- Get filtered signals from separate red/green tables
+-- Combines signals based on wire filter setting
+-- @param red_signals table: Signals from red wire {[signal_id] = count}
+-- @param green_signals table: Signals from green wire {[signal_id] = count}
+-- @param wire_filter string: "red", "green", "both", or "none"
+-- @return table: Filtered signal table with combined values
+function signal_utils.get_filtered_signals_from_tables(red_signals, green_signals, wire_filter)
+  local result = {}
+
+  -- Default to "both" if wire_filter is nil or invalid (defensive programming)
+  if not wire_filter or wire_filter == "" then
+    wire_filter = "both"
+  end
+
+  -- Handle "none" case explicitly - return empty table (all signals = 0)
+  if wire_filter == "none" then
+    return result
+  end
+
+  if wire_filter == "red" or wire_filter == "both" then
+    if red_signals then
+      for signal_id, count in pairs(red_signals) do
+        result[signal_id] = (result[signal_id] or 0) + count
+      end
+    end
+  end
+
+  if wire_filter == "green" or wire_filter == "both" then
+    if green_signals then
+      for signal_id, count in pairs(green_signals) do
+        result[signal_id] = (result[signal_id] or 0) + count
+      end
+    end
+  end
+
+  return result
+end
+
+-- ==============================================================================
+-- CONDITION EVALUATION
+-- ==============================================================================
+
+--- Evaluate a single condition with aggregate signal support
+-- Handles EVERYTHING, ANYTHING, EACH, and NORMAL signal types
+-- @param left_signals table: Signals to evaluate {[signal_key] = value}
+-- @param left_signal SignalID: The left signal (may be aggregate)
+-- @param operator string: Comparison operator
+-- @param right_value number: The right-hand value to compare against
+-- @param right_signals table: Optional - signals for right side (needed when right is EACH)
+-- @param right_signal SignalID: Optional - the right signal (to detect EACH)
+-- @return boolean: Result of the condition evaluation
+function signal_utils.evaluate_single_condition_with_aggregates(left_signals, left_signal, operator, right_value, right_signals, right_signal)
+  local eval_type = signal_utils.get_signal_eval_type(left_signal)
+  local right_eval_type = signal_utils.get_signal_eval_type(right_signal)
+
+  -- EACH on left side: iterate through all left signals
+  -- TRUE if ANY signal satisfies the condition
+  if eval_type == SIGNAL_EVAL_TYPE.EACH then
+    for signal_key, left_value in pairs(left_signals) do
+      local compare_value
+      if right_eval_type == SIGNAL_EVAL_TYPE.EACH then
+        -- EACH vs EACH: compare same signal on both sides
+        compare_value = (right_signals and right_signals[signal_key]) or 0
+      else
+        -- EACH vs constant/normal signal: use the provided right_value
+        compare_value = right_value
+      end
+
+      if signal_utils.compare_values(left_value, compare_value, operator) then
+        return true  -- Any match means true
+      end
+    end
+    return false  -- No matches
+  end
+
+  -- EVERYTHING: ALL non-zero signals must satisfy condition
+  -- Special case: If NO signals exist, treat as everything == 0
+  if eval_type == SIGNAL_EVAL_TYPE.EVERYTHING then
+    local has_signals = false
+    for _, value in pairs(left_signals) do
+      has_signals = true
+      if not signal_utils.compare_values(value, right_value, operator) then
+        return false
+      end
+    end
+    -- If no signals at all, treat as everything == 0 and compare against RHS
+    if not has_signals then
+      return signal_utils.compare_values(0, right_value, operator)
+    end
+    return true  -- All signals satisfied the condition
+  end
+
+  -- ANYTHING: AT LEAST ONE signal must satisfy condition
+  if eval_type == SIGNAL_EVAL_TYPE.ANYTHING then
+    for _, value in pairs(left_signals) do
+      if signal_utils.compare_values(value, right_value, operator) then
+        return true
+      end
+    end
+    return false
+  end
+
+  -- NORMAL: Standard single signal comparison
+  local left_key = signal_utils.get_signal_key(left_signal)
+  local left_value = left_signals[left_key] or 0
+  return signal_utils.compare_values(left_value, right_value, operator)
+end
+
+--- Evaluate condition results with AND/OR precedence
+-- AND has higher precedence than OR (AND operations are performed first)
+-- @param evaluated_conditions table: Array of {result=boolean, logical_op=nil|"AND"|"OR"}
+-- @return boolean: Final result
+--
+-- Algorithm:
+--   1. Split conditions into groups separated by OR
+--   2. Within each group, AND all conditions together
+--   3. OR all group results together
+function signal_utils.evaluate_with_precedence(evaluated_conditions)
+  if #evaluated_conditions == 0 then
+    return false
+  end
+
+  -- Build groups: each group contains consecutive AND conditions (or standalone conditions)
+  local groups = {}
+  local current_group = {}
+
+  for i, cond_data in ipairs(evaluated_conditions) do
+    if i == 1 then
+      -- First condition always starts a group (no logical_op)
+      table.insert(current_group, cond_data.result)
+    elseif cond_data.logical_op == "OR" then
+      -- OR starts a new group (finish current group first)
+      table.insert(groups, current_group)
+      current_group = {cond_data.result}  -- Start new group with this condition
+    else
+      -- AND or nil (treat as AND) - add to current group
+      table.insert(current_group, cond_data.result)
+    end
+  end
+
+  -- Don't forget the last group
+  if #current_group > 0 then
+    table.insert(groups, current_group)
+  end
+
+  -- Evaluate each group (AND all conditions within group)
+  local group_results = {}
+  for _, group in ipairs(groups) do
+    local group_result = true
+    for _, condition_result in ipairs(group) do
+      group_result = group_result and condition_result
+      if not group_result then
+        break  -- Short-circuit: if any AND fails, whole group is false
+      end
+    end
+    table.insert(group_results, group_result)
+  end
+
+  -- OR all group results together
+  local final_result = false
+  for _, group_result in ipairs(group_results) do
+    final_result = final_result or group_result
+    if final_result then
+      break  -- Short-circuit: if any OR succeeds, whole expression is true
+    end
+  end
+
+  return final_result
+end
+
+--- Evaluate complex conditions with boolean operators and proper precedence
+-- Evaluates an array of conditions with per-condition AND/OR operators
+-- AND has higher precedence than OR (AND binds tighter)
+-- @param conditions table: Array of condition objects with logical_op field
+-- @param red_signals table: Signals from red wire {[signal_id] = count}
+-- @param green_signals table: Signals from green wire {[signal_id] = count}
+-- @return boolean: True if overall condition expression is true
+--
+-- Condition format:
+--   {
+--     {
+--       logical_op = nil|"AND"|"OR",  -- nil for first, AND/OR for subsequent
+--       left_signal = {type="item", name="iron-plate"},
+--       left_wire_filter = "red"|"green"|"both",
+--       operator = "<"|">"|"="|"≠"|"≤"|"≥",
+--       right_type = "constant"|"signal",
+--       right_value = 100,  -- If constant
+--       right_signal = {...},  -- If signal
+--       right_wire_filter = "red"|"green"|"both"
+--     },
+--     -- ... more conditions
+--   }
+function signal_utils.evaluate_complex_conditions(conditions, red_signals, green_signals)
+  if not conditions or #conditions == 0 then
+    return false  -- No conditions = false
+  end
+
+  -- Step 1: Evaluate all individual conditions and store results with their operators
+  local evaluated_conditions = {}
+  for i, cond in ipairs(conditions) do
+    -- Get signals for left side based on wire filter
+    local left_signals = signal_utils.get_filtered_signals_from_tables(red_signals, green_signals, cond.left_wire_filter)
+
+    -- Get right signal value and signals (needed for EACH on right side)
+    local right_value
+    local right_signals_filtered = nil
+    if cond.right_type == "signal" then
+      right_signals_filtered = signal_utils.get_filtered_signals_from_tables(red_signals, green_signals, cond.right_wire_filter)
+      local right_key = signal_utils.get_signal_key(cond.right_signal)
+      right_value = right_signals_filtered[right_key] or 0
+    else
+      right_value = cond.right_value or 0
+    end
+
+    -- Evaluate this condition using shared helper (handles aggregate signals including EACH)
+    local cond_result = signal_utils.evaluate_single_condition_with_aggregates(
+      left_signals, cond.left_signal, cond.operator, right_value, right_signals_filtered, cond.right_signal
+    )
+
+    table.insert(evaluated_conditions, {
+      result = cond_result,
+      logical_op = cond.logical_op  -- nil for first, "AND" or "OR" for subsequent
+    })
+  end
+
+  -- Step 2: Apply AND/OR precedence (AND binds tighter than OR)
+  return signal_utils.evaluate_with_precedence(evaluated_conditions)
+end
+
+-- Export the SIGNAL_EVAL_TYPE constants for external use
+signal_utils.SIGNAL_EVAL_TYPE = SIGNAL_EVAL_TYPE
+
 return signal_utils

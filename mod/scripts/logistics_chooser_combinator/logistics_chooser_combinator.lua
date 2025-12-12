@@ -73,15 +73,19 @@ function logistics_chooser.process_groups(unit_number)
 
     for _, sig_data in ipairs(input_signals.red or {}) do
         if sig_data.signal_id then
-            local key = gui_utils.get_signal_key(sig_data.signal_id)
-            red_signals[key] = sig_data.count
+            local key = signal_utils.get_signal_key(sig_data.signal_id)
+            if key ~= "" then
+                red_signals[key] = sig_data.count
+            end
         end
     end
 
     for _, sig_data in ipairs(input_signals.green or {}) do
         if sig_data.signal_id then
-            local key = gui_utils.get_signal_key(sig_data.signal_id)
-            green_signals[key] = sig_data.count
+            local key = signal_utils.get_signal_key(sig_data.signal_id)
+            if key ~= "" then
+                green_signals[key] = sig_data.count
+            end
         end
     end
 
@@ -97,7 +101,7 @@ function logistics_chooser.process_groups(unit_number)
         if group.condition and group.group then
             -- Evaluate this group's condition
             -- Note: We pass an array with a single condition since each group has one condition
-            is_active = gui_utils.evaluate_complex_conditions(
+            is_active = signal_utils.evaluate_complex_conditions(
                 {group.condition},
                 red_signals,
                 green_signals

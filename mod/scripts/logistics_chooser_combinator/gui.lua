@@ -4,10 +4,14 @@
 
 local flib_gui = require("__flib__.gui")
 local gui_utils = require("lib.gui_utils")
+local signal_utils = require("lib.signal_utils")
 local gui_entity = require("lib.gui.gui_entity")
 local gui_circuit_inputs = require("lib.gui.gui_circuit_inputs")
 local circuit_utils = require("lib.circuit_utils")
 local globals = require("scripts.globals")
+
+-- Import signal evaluation type constants for cleaner comparisons
+local SIGNAL_EVAL_TYPE = signal_utils.SIGNAL_EVAL_TYPE
 
 local logistics_chooser_gui = {}
 
@@ -108,15 +112,19 @@ local function evaluate_and_update_statuses(player, chooser_data, entity)
 
     for _, sig_data in ipairs(input_signals.red or {}) do
         if sig_data.signal_id then
-            local key = gui_utils.get_signal_key(sig_data.signal_id)
-            red_signals[key] = sig_data.count
+            local key = signal_utils.get_signal_key(sig_data.signal_id)
+            if key ~= "" then
+                red_signals[key] = sig_data.count
+            end
         end
     end
 
     for _, sig_data in ipairs(input_signals.green or {}) do
         if sig_data.signal_id then
-            local key = gui_utils.get_signal_key(sig_data.signal_id)
-            green_signals[key] = sig_data.count
+            local key = signal_utils.get_signal_key(sig_data.signal_id)
+            if key ~= "" then
+                green_signals[key] = sig_data.count
+            end
         end
     end
 
@@ -127,7 +135,7 @@ local function evaluate_and_update_statuses(player, chooser_data, entity)
         if group.condition then
             -- Evaluate the condition using gui_utils
             -- Note: We pass an array with a single condition since each group has one condition
-            is_active = gui_utils.evaluate_complex_conditions(
+            is_active = signal_utils.evaluate_complex_conditions(
                 {group.condition},
                 red_signals,
                 green_signals
@@ -858,11 +866,11 @@ function logistics_chooser_gui.on_gui_elem_changed(event)
 
             -- If left side changed FROM EACH to something else, and right side is EACH,
             -- we need to clear the right signal (EACH on right is only valid with EACH on left)
-            local old_left_type = gui_utils.get_signal_eval_type(condition.left_signal)
-            local new_left_type = gui_utils.get_signal_eval_type(element.elem_value)
-            local right_type = gui_utils.get_signal_eval_type(condition.right_signal)
+            local old_left_type = signal_utils.get_signal_eval_type(condition.left_signal)
+            local new_left_type = signal_utils.get_signal_eval_type(element.elem_value)
+            local right_type = signal_utils.get_signal_eval_type(condition.right_signal)
 
-            if old_left_type == "each" and new_left_type ~= "each" and right_type == "each" then
+            if old_left_type == SIGNAL_EVAL_TYPE.EACH and new_left_type ~= SIGNAL_EVAL_TYPE.EACH and right_type == SIGNAL_EVAL_TYPE.EACH then
                 -- Clear the right signal since EACH is no longer valid there
                 condition.right_signal = nil
                 -- Update the GUI element if it exists
