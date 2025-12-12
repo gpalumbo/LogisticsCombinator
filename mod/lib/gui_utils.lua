@@ -1,8 +1,10 @@
 -- gui_utils.lua
 -- Purpose: Common GUI creation patterns and helpers for Mission Control mod
--- Dependencies: None
+-- Dependencies: signal_utils (for signal evaluation type checking in validation)
 -- This module provides REUSABLE GUI components used across multiple entity types
 -- Does NOT contain entity-specific GUI layouts (those are in scripts/gui_handlers)
+
+local signal_utils = require("lib.signal_utils")
 
 -- ==============================================================================
 -- CONSTANTS
@@ -34,13 +36,8 @@ local STATUS_ICONS = {
   warning = "[img=utility/warning_icon]"
 }
 
--- Signal evaluation types for special handling of aggregate signals
-local SIGNAL_EVAL_TYPE = {
-  NORMAL = "normal",         -- Standard signal comparison
-  EACH = "each",             -- Not supported in conditions
-  ANYTHING = "anything",     -- TRUE if ANY signal matches condition
-  EVERYTHING = "everything"  -- TRUE if ALL signals match condition
-}
+-- Signal evaluation types (imported from signal_utils for validation)
+local SIGNAL_EVAL_TYPE = signal_utils.SIGNAL_EVAL_TYPE
 
 function find_child_recursive(element, name)
     if element.name == name then
@@ -56,27 +53,8 @@ function find_child_recursive(element, name)
 end
 
 -- ==============================================================================
--- VIRTUAL SIGNAL EVALUATION TYPE
+-- SIGNAL VALIDATION (for GUI feedback)
 -- ==============================================================================
-
---- Determine the evaluation type for a signal
--- Returns the appropriate SIGNAL_EVAL_TYPE based on the signal
--- @param signal SignalID: The signal to check {type=string, name=string}
--- @return string: One of SIGNAL_EVAL_TYPE values (NORMAL, EACH, ANYTHING, EVERYTHING)
-function get_signal_eval_type(signal)
-    if not signal then return SIGNAL_EVAL_TYPE.NORMAL end
-    if signal.type ~= "virtual" then return SIGNAL_EVAL_TYPE.NORMAL end
-
-    if signal.name == "signal-each" then
-        return SIGNAL_EVAL_TYPE.EACH
-    elseif signal.name == "signal-anything" then
-        return SIGNAL_EVAL_TYPE.ANYTHING
-    elseif signal.name == "signal-everything" then
-        return SIGNAL_EVAL_TYPE.EVERYTHING
-    end
-
-    return SIGNAL_EVAL_TYPE.NORMAL
-end
 
 --- Validate a signal for use in LEFT side of conditions
 -- All signal types are valid on the left side (NORMAL, EACH, ANYTHING, EVERYTHING)
@@ -95,7 +73,7 @@ end
 -- @param left_signal SignalID: The left side signal (to check if EACH is allowed)
 -- @return string|nil: Locale key for error message, or nil if valid
 function validate_right_signal(signal, left_signal)
-    local eval_type = get_signal_eval_type(signal)
+    local eval_type = signal_utils.get_signal_eval_type(signal)
 
     -- NORMAL signals are always valid on right side
     if eval_type == SIGNAL_EVAL_TYPE.NORMAL then
@@ -104,7 +82,7 @@ function validate_right_signal(signal, left_signal)
 
     -- EACH is valid on right side ONLY if left side is also EACH
     if eval_type == SIGNAL_EVAL_TYPE.EACH then
-        local left_eval_type = get_signal_eval_type(left_signal)
+        local left_eval_type = signal_utils.get_signal_eval_type(left_signal)
         if left_eval_type == SIGNAL_EVAL_TYPE.EACH then
             return nil  -- EACH on right is valid when left is EACH
         else
@@ -114,30 +92,6 @@ function validate_right_signal(signal, left_signal)
 
     -- ANYTHING and EVERYTHING are never valid on right side
     return "gui.special-signal-not-allowed-right"
-end
-
---- Compare two values with an operator
--- Helper function for condition evaluation
--- @param left number: Left-hand value
--- @param right number: Right-hand value
--- @param operator string: Comparison operator
--- @return boolean: Result of comparison
-function compare_values(left, right, operator)
-  if operator == "<" then
-    return left < right
-  elseif operator == ">" then
-    return left > right
-  elseif operator == "=" then
-    return left == right
-  elseif operator == "≠" then
-    return left ~= right
-  elseif operator == "≤" then
-    return left <= right
-  elseif operator == "≥" then
-    return left >= right
-  else
-    return false  -- Unknown operator
-  end
 end
 
 -- ==============================================================================
@@ -605,257 +559,6 @@ function get_checkboxes_from_wire_filter(wire_filter)
   end
 end
 
---- Evaluate a single condition with aggregate signal support (shared by both combinators)
--- Handles EVERYTHING, ANYTHING, EACH, and NORMAL signal types
--- @param left_signals table: Signals to evaluate {[signal_key] = value}
--- @param left_signal SignalID: The left signal (may be aggregate)
--- @param operator string: Comparison operator
--- @param right_value number: The right-hand value to compare against (for constant or normal signal)
--- @param right_signals table: Optional - signals for right side (needed when right is EACH)
--- @param right_signal SignalID: Optional - the right signal (to detect EACH)
--- @return boolean: Result of the condition evaluation
---
--- Special case for EVERYTHING:
---   When no signals are present on the selected wire(s), EVERYTHING is treated as == 0.
---   This means EVERYTHING < 1 is TRUE when no signals exist.
---   If wire filter is "both", both red AND green must be empty for this to trigger.
-function evaluate_single_condition_with_aggregates(left_signals, left_signal, operator, right_value, right_signals, right_signal)
-  local eval_type = get_signal_eval_type(left_signal)
-  local right_eval_type = get_signal_eval_type(right_signal)
-
-  -- EACH on left side: iterate through all left signals
-  -- TRUE if ANY signal satisfies the condition
-  if eval_type == SIGNAL_EVAL_TYPE.EACH then
-    for signal_key, left_value in pairs(left_signals) do
-      local compare_value
-      if right_eval_type == SIGNAL_EVAL_TYPE.EACH then
-        -- EACH vs EACH: compare same signal on both sides
-        compare_value = (right_signals and right_signals[signal_key]) or 0
-      else
-        -- EACH vs constant/normal signal: use the provided right_value
-        compare_value = right_value
-      end
-
-      if compare_values(left_value, compare_value, operator) then
-        return true  -- Any match means true
-      end
-    end
-    return false  -- No matches
-  end
-
-  -- EVERYTHING: ALL non-zero signals must satisfy condition
-  -- Special case: If NO signals exist, treat as everything == 0
-  if eval_type == SIGNAL_EVAL_TYPE.EVERYTHING then
-    local has_signals = false
-    for _, value in pairs(left_signals) do
-      has_signals = true
-      if not compare_values(value, right_value, operator) then
-        return false
-      end
-    end
-    -- If no signals at all, treat as everything == 0 and compare against RHS
-    if not has_signals then
-      return compare_values(0, right_value, operator)
-    end
-    return true  -- All signals satisfied the condition
-  end
-
-  -- ANYTHING: AT LEAST ONE signal must satisfy condition
-  if eval_type == SIGNAL_EVAL_TYPE.ANYTHING then
-    for _, value in pairs(left_signals) do
-      if compare_values(value, right_value, operator) then
-        return true
-      end
-    end
-    return false
-  end
-
-  -- NORMAL: Standard single signal comparison
-  local left_key = get_signal_key(left_signal)
-  local left_value = left_signals[left_key] or 0
-  return compare_values(left_value, right_value, operator)
-end
-
---- Evaluate complex conditions with boolean operators and proper precedence
--- Evaluates an array of conditions with per-condition AND/OR operators
--- AND has higher precedence than OR (AND binds tighter)
--- @param conditions table: Array of condition objects with logical_op field
--- @param red_signals table: Signals from red wire {[signal_id] = count}
--- @param green_signals table: Signals from green wire {[signal_id] = count}
--- @return boolean: True if overall condition expression is true
---
--- Condition format:
---   {
---     {
---       logical_op = nil|"AND"|"OR",  -- nil for first, AND/OR for subsequent
---       left_signal = {type="item", name="iron-plate"},
---       left_wire_filter = "red"|"green"|"both",
---       operator = "<"|">"|"="|"≠"|"≤"|"≥",
---       right_type = "constant"|"signal",
---       right_value = 100,  -- If constant
---       right_signal = {...},  -- If signal
---       right_wire_filter = "red"|"green"|"both"
---     },
---     -- ... more conditions
---   }
---
--- Precedence Rules:
---   AND has higher precedence than OR
---   Example: A AND B AND C OR D OR E
---     Groups: [[A,B,C], [D], [E]]
---     Evaluation: (A AND B AND C) OR D OR E
---
---   Example: A OR B AND C OR D AND E
---     Groups: [[A], [B,C], [D,E]]
---     Evaluation: A OR (B AND C) OR (D AND E)
---
--- Examples:
---   evaluate_complex_conditions({{...}}, red, green) => true/false
---   Empty conditions array => false (no conditions to evaluate)
---   First condition's logical_op is ignored (should be nil)
-function evaluate_complex_conditions(conditions, red_signals, green_signals)
-  if not conditions or #conditions == 0 then
-    return false  -- No conditions = false
-  end
-
-  -- Step 1: Evaluate all individual conditions and store results with their operators
-  local evaluated_conditions = {}
-  for i, cond in ipairs(conditions) do
-    -- Get signals for left side based on wire filter
-    local left_signals = get_filtered_signals_from_tables(red_signals, green_signals, cond.left_wire_filter)
-
-    -- Get right signal value and signals (needed for EACH on right side)
-    local right_value
-    local right_signals_filtered = nil
-    if cond.right_type == "signal" then
-      right_signals_filtered = get_filtered_signals_from_tables(red_signals, green_signals, cond.right_wire_filter)
-      local right_key = get_signal_key(cond.right_signal)
-      right_value = right_signals_filtered[right_key] or 0
-    else
-      right_value = cond.right_value or 0
-    end
-
-    -- Evaluate this condition using shared helper (handles aggregate signals including EACH)
-    local cond_result = evaluate_single_condition_with_aggregates(
-      left_signals, cond.left_signal, cond.operator, right_value, right_signals_filtered, cond.right_signal
-    )
-
-    table.insert(evaluated_conditions, {
-      result = cond_result,
-      logical_op = cond.logical_op  -- nil for first, "AND" or "OR" for subsequent
-    })
-  end
-
-  -- Step 2: Apply AND/OR precedence (AND binds tighter than OR)
-  -- Split conditions into groups separated by OR, evaluate ANDs within each group
-  return evaluate_with_precedence(evaluated_conditions)
-end
-
---- Evaluate condition results with AND/OR precedence
--- AND has higher precedence than OR (AND operations are performed first)
--- @param evaluated_conditions table: Array of {result=boolean, logical_op=nil|"AND"|"OR"}
--- @return boolean: Final result
---
--- Algorithm:
---   1. Split conditions into groups separated by OR
---   2. Within each group, AND all conditions together
---   3. OR all group results together
---
--- Example: [true, AND true, AND false, OR true, OR false]
---   Groups: [[true, true, false], [true], [false]]
---   AND groups: [false, true, false]
---   Final OR: false OR true OR false = true
-function evaluate_with_precedence(evaluated_conditions)
-  if #evaluated_conditions == 0 then
-    return false
-  end
-
-  -- Build groups: each group contains consecutive AND conditions (or standalone conditions)
-  local groups = {}
-  local current_group = {}
-
-  for i, cond_data in ipairs(evaluated_conditions) do
-    if i == 1 then
-      -- First condition always starts a group (no logical_op)
-      table.insert(current_group, cond_data.result)
-    elseif cond_data.logical_op == "OR" then
-      -- OR starts a new group (finish current group first)
-      table.insert(groups, current_group)
-      current_group = {cond_data.result}  -- Start new group with this condition
-    else
-      -- AND or nil (treat as AND) - add to current group
-      table.insert(current_group, cond_data.result)
-    end
-  end
-
-  -- Don't forget the last group
-  if #current_group > 0 then
-    table.insert(groups, current_group)
-  end
-
-  -- Step 2: Evaluate each group (AND all conditions within group)
-  local group_results = {}
-  for _, group in ipairs(groups) do
-    local group_result = true
-    for _, condition_result in ipairs(group) do
-      group_result = group_result and condition_result
-      if not group_result then
-        break  -- Short-circuit: if any AND fails, whole group is false
-      end
-    end
-    table.insert(group_results, group_result)
-  end
-
-  -- Step 3: OR all group results together
-  local final_result = false
-  for _, group_result in ipairs(group_results) do
-    final_result = final_result or group_result
-    if final_result then
-      break  -- Short-circuit: if any OR succeeds, whole expression is true
-    end
-  end
-
-  return final_result
-end
-
---- Get filtered signals from separate red/green tables
--- Helper for complex condition evaluation
--- @param red_signals table: Signals from red wire
--- @param green_signals table: Signals from green wire
--- @param wire_filter string: "red", "green", "both", or "none"
--- @return table: Filtered signal table
-function get_filtered_signals_from_tables(red_signals, green_signals, wire_filter)
-  local result = {}
-
-  -- Default to "both" if wire_filter is nil or invalid (defensive programming)
-  if not wire_filter or wire_filter == "" then
-    wire_filter = "both"
-  end
-
-  -- Handle "none" case explicitly - return empty table (all signals = 0)
-  if wire_filter == "none" then
-    return result
-  end
-
-  if wire_filter == "red" or wire_filter == "both" then
-    if red_signals then
-      for signal_id, count in pairs(red_signals) do
-        result[signal_id] = (result[signal_id] or 0) + count
-      end
-    end
-  end
-
-  if wire_filter == "green" or wire_filter == "both" then
-    if green_signals then
-      for signal_id, count in pairs(green_signals) do
-        result[signal_id] = (result[signal_id] or 0) + count
-      end
-    end
-  end
-
-  return result
-end
-
 --- Update visual layout of condition rows based on AND/OR mix
 -- Applies left-shift to OR condition rows when mixed with AND conditions
 -- @param parent LuaGuiElement: Parent element containing condition rows
@@ -891,17 +594,6 @@ function update_condition_row_styles(parent, conditions)
       end
     end
   end
-end
-
---- Get signal key for table lookup
--- Internal helper to convert signal definition to string key
--- @param signal table: {type = "item"|"fluid"|"virtual", name = "signal-name"}
--- @return string: Key for signal table lookup
-function get_signal_key(signal)
-  if not signal or not signal.name then return "" end
-  local signal_type = signal.type or "item"  -- Default to "item" if type not specified
-  -- Use type:name format to distinguish between item/fluid/virtual signals with same name
-  return signal_type .. ":" .. signal.name
 end
 
 --- Create condition result indicator
@@ -989,15 +681,7 @@ return {
   get_operator_from_index = get_operator_from_index,
   get_index_from_operator = get_index_from_operator,
 
-  -- Signal validation
+  -- Signal validation (for GUI feedback)
   validate_condition_signal = validate_condition_signal,
-  validate_right_signal = validate_right_signal,
-  get_signal_eval_type = get_signal_eval_type,
-
-  -- Condition evaluation
-  evaluate_complex_conditions = evaluate_complex_conditions,
-  evaluate_with_precedence = evaluate_with_precedence,
-  get_signal_key = get_signal_key,
-  compare_values = compare_values,
-  get_filtered_signals_from_tables = get_filtered_signals_from_tables
+  validate_right_signal = validate_right_signal
 }

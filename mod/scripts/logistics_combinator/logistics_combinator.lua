@@ -66,14 +66,14 @@ function logistics_combinator.process_rules(unit_number)
 
     for _, sig_data in ipairs(input_signals.red or {}) do
         if sig_data.signal_id then
-            local key = gui_utils.get_signal_key(sig_data.signal_id)
+            local key = signal_utils.get_signal_key(sig_data.signal_id)
             red_signals[key] = sig_data.count
         end
     end
 
     for _, sig_data in ipairs(input_signals.green or {}) do
         if sig_data.signal_id then
-            local key = gui_utils.get_signal_key(sig_data.signal_id)
+            local key = signal_utils.get_signal_key(sig_data.signal_id)
             green_signals[key] = sig_data.count
         end
     end
@@ -81,7 +81,7 @@ function logistics_combinator.process_rules(unit_number)
     -- 3. Evaluate conditions
     local current_result = false
     if combinator_data.conditions and #combinator_data.conditions > 0 then
-        current_result = gui_utils.evaluate_complex_conditions(
+        current_result = signal_utils.evaluate_complex_conditions(
             combinator_data.conditions,
             red_signals,
             green_signals
