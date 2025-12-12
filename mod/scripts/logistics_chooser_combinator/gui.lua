@@ -10,6 +10,9 @@ local gui_circuit_inputs = require("lib.gui.gui_circuit_inputs")
 local circuit_utils = require("lib.circuit_utils")
 local globals = require("scripts.globals")
 
+-- Import signal evaluation type constants for cleaner comparisons
+local SIGNAL_EVAL_TYPE = signal_utils.SIGNAL_EVAL_TYPE
+
 local logistics_chooser_gui = {}
 
 -- GUI element names
@@ -110,14 +113,18 @@ local function evaluate_and_update_statuses(player, chooser_data, entity)
     for _, sig_data in ipairs(input_signals.red or {}) do
         if sig_data.signal_id then
             local key = signal_utils.get_signal_key(sig_data.signal_id)
-            red_signals[key] = sig_data.count
+            if key ~= "" then
+                red_signals[key] = sig_data.count
+            end
         end
     end
 
     for _, sig_data in ipairs(input_signals.green or {}) do
         if sig_data.signal_id then
             local key = signal_utils.get_signal_key(sig_data.signal_id)
-            green_signals[key] = sig_data.count
+            if key ~= "" then
+                green_signals[key] = sig_data.count
+            end
         end
     end
 
@@ -863,7 +870,7 @@ function logistics_chooser_gui.on_gui_elem_changed(event)
             local new_left_type = signal_utils.get_signal_eval_type(element.elem_value)
             local right_type = signal_utils.get_signal_eval_type(condition.right_signal)
 
-            if old_left_type == "each" and new_left_type ~= "each" and right_type == "each" then
+            if old_left_type == SIGNAL_EVAL_TYPE.EACH and new_left_type ~= SIGNAL_EVAL_TYPE.EACH and right_type == SIGNAL_EVAL_TYPE.EACH then
                 -- Clear the right signal since EACH is no longer valid there
                 condition.right_signal = nil
                 -- Update the GUI element if it exists

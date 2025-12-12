@@ -74,14 +74,18 @@ function logistics_chooser.process_groups(unit_number)
     for _, sig_data in ipairs(input_signals.red or {}) do
         if sig_data.signal_id then
             local key = signal_utils.get_signal_key(sig_data.signal_id)
-            red_signals[key] = sig_data.count
+            if key ~= "" then
+                red_signals[key] = sig_data.count
+            end
         end
     end
 
     for _, sig_data in ipairs(input_signals.green or {}) do
         if sig_data.signal_id then
             local key = signal_utils.get_signal_key(sig_data.signal_id)
-            green_signals[key] = sig_data.count
+            if key ~= "" then
+                green_signals[key] = sig_data.count
+            end
         end
     end
 
