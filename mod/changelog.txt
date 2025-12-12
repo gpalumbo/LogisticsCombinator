@@ -1,4 +1,20 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.2.4
+Date: 2025-12-12
+  Bug Fixes:
+    - When LHS is EVERYTHING and there is no signal on the specific wire decider combinator 
+      treats this as everything is 0.  We now follow that convention.
+---------------------------------------------------------------------------------------------------
+Version: 0.2.3
+Date: 2025-11-30
+  Minor Feature:
+    - Left hand side of condition handles Each, Anything and Everything signals
+    - Right hand side of condition Anything and Everything signals are disallowed. Each is only 
+      allowed when Each is already set of the LHS.
+    - Each will compare each signal for the condition and if ANY are true the condition will be true
+      Probalby most beneficial comparing red to green, otehrwise Any or Every would be more suitable.
+    - Having trouble with elem_chooser_button filter, so I can't hide the signal options, so 
+      instead I generate a message if the disallowed signals are chosen and reset the button
 Version: 0.2.3
 Date: 2025-11-30
   Minor Feature:
