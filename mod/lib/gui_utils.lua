@@ -655,6 +655,7 @@ function evaluate_condition(signals, condition)
   local operator = condition.operator
 
   -- Handle EVERYTHING: ALL non-zero signals must satisfy condition
+  -- Special case: If NO signals exist, treat as everything == 0
   if eval_type == SIGNAL_EVAL_TYPE.EVERYTHING then
     local has_signals = false
     for _, value in pairs(signals) do
@@ -663,7 +664,11 @@ function evaluate_condition(signals, condition)
         return false  -- Any failure means false
       end
     end
-    return has_signals  -- False if no signals at all
+    -- If no signals at all, treat as everything == 0 and compare against RHS
+    if not has_signals then
+      return compare_values(0, right_value, operator)
+    end
+    return true  -- All signals satisfied the condition
   end
 
   -- Handle ANYTHING: AT LEAST ONE signal must satisfy condition
@@ -691,6 +696,11 @@ end
 -- @param right_signals table: Optional - signals for right side (needed when right is EACH)
 -- @param right_signal SignalID: Optional - the right signal (to detect EACH)
 -- @return boolean: Result of the condition evaluation
+--
+-- Special case for EVERYTHING:
+--   When no signals are present on the selected wire(s), EVERYTHING is treated as == 0.
+--   This means EVERYTHING < 1 is TRUE when no signals exist.
+--   If wire filter is "both", both red AND green must be empty for this to trigger.
 function evaluate_single_condition_with_aggregates(left_signals, left_signal, operator, right_value, right_signals, right_signal)
   local eval_type = get_signal_eval_type(left_signal)
   local right_eval_type = get_signal_eval_type(right_signal)
@@ -716,6 +726,7 @@ function evaluate_single_condition_with_aggregates(left_signals, left_signal, op
   end
 
   -- EVERYTHING: ALL non-zero signals must satisfy condition
+  -- Special case: If NO signals exist, treat as everything == 0
   if eval_type == SIGNAL_EVAL_TYPE.EVERYTHING then
     local has_signals = false
     for _, value in pairs(left_signals) do
@@ -724,7 +735,11 @@ function evaluate_single_condition_with_aggregates(left_signals, left_signal, op
         return false
       end
     end
-    return has_signals  -- False if no signals at all
+    -- If no signals at all, treat as everything == 0 and compare against RHS
+    if not has_signals then
+      return compare_values(0, right_value, operator)
+    end
+    return true  -- All signals satisfied the condition
   end
 
   -- ANYTHING: AT LEAST ONE signal must satisfy condition
