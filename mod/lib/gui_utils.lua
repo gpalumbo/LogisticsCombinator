@@ -605,88 +605,6 @@ function get_checkboxes_from_wire_filter(wire_filter)
   end
 end
 
--- ==============================================================================
--- CONDITION EVALUATION
--- ==============================================================================
-
---- Evaluate circuit condition
--- Generic signal comparison logic used by multiple entities
--- This function belongs here (not in logistics_combinator) because it's
--- generic logic with no entity-specific knowledge
--- @param signals table: Current signal values {[signal_name] = value}
--- @param condition table: {signal, operator, value} or {signal, operator, compare_signal}
--- @return boolean: True if condition met
---
--- Condition format:
---   condition.signal = {type = "item"|"fluid"|"virtual", name = "signal-name"}
---   condition.operator = "<" | ">" | "=" | "≠" | "≤" | "≥"
---   condition.value = number OR
---   condition.compare_signal = {type = "...", name = "..."} for signal-to-signal comparison
---
--- Examples:
---   evaluate_condition({iron_plate = 100}, {signal = {type="item", name="iron-plate"}, operator = "<", value = 50})
---   -> false (100 is not < 50)
---
---   evaluate_condition({coal = 10, wood = 20}, {signal = {type="item", name="coal"}, operator = "≤", compare_signal = {type="item", name="wood"}})
---   -> true (10 <= 20)
-function evaluate_condition(signals, condition)
-  if not signals or not condition then return false end
-  if not condition.signal or not condition.operator then return false end
-
-  -- Check for aggregate signal types (Everything, Anything, Each)
-  local eval_type = get_signal_eval_type(condition.signal)
-
-  -- Each signal is not supported - return false
-  if eval_type == SIGNAL_EVAL_TYPE.EACH then
-    return false
-  end
-
-  -- Get right-hand value (constant or another signal)
-  local right_value
-  if condition.compare_signal then
-    -- Signal-to-signal comparison
-    local compare_key = get_signal_key(condition.compare_signal)
-    right_value = signals[compare_key] or 0
-  else
-    -- Constant value comparison
-    right_value = condition.value or 0
-  end
-
-  local operator = condition.operator
-
-  -- Handle EVERYTHING: ALL non-zero signals must satisfy condition
-  -- Special case: If NO signals exist, treat as everything == 0
-  if eval_type == SIGNAL_EVAL_TYPE.EVERYTHING then
-    local has_signals = false
-    for _, value in pairs(signals) do
-      has_signals = true
-      if not compare_values(value, right_value, operator) then
-        return false  -- Any failure means false
-      end
-    end
-    -- If no signals at all, treat as everything == 0 and compare against RHS
-    if not has_signals then
-      return compare_values(0, right_value, operator)
-    end
-    return true  -- All signals satisfied the condition
-  end
-
-  -- Handle ANYTHING: AT LEAST ONE signal must satisfy condition
-  if eval_type == SIGNAL_EVAL_TYPE.ANYTHING then
-    for _, value in pairs(signals) do
-      if compare_values(value, right_value, operator) then
-        return true  -- Any match means true
-      end
-    end
-    return false  -- No matches
-  end
-
-  -- NORMAL: Standard single signal comparison
-  local signal_key = get_signal_key(condition.signal)
-  local left_value = signals[signal_key] or 0
-  return compare_values(left_value, right_value, operator)
-end
-
 --- Evaluate a single condition with aggregate signal support (shared by both combinators)
 -- Handles EVERYTHING, ANYTHING, EACH, and NORMAL signal types
 -- @param left_signals table: Signals to evaluate {[signal_key] = value}
@@ -1077,7 +995,6 @@ return {
   get_signal_eval_type = get_signal_eval_type,
 
   -- Condition evaluation
-  evaluate_condition = evaluate_condition,
   evaluate_complex_conditions = evaluate_complex_conditions,
   evaluate_with_precedence = evaluate_with_precedence,
   get_signal_key = get_signal_key,
