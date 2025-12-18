@@ -100,8 +100,8 @@ local function evaluate_and_update_statuses(player, chooser_data, entity)
     local groups_table = get_groups_table(player)
     if not groups_table then return end
 
-    -- Get circuit signals using circuit_utils
-    local input_signals = circuit_utils.get_input_signals(entity, "combinator_input")
+    -- Get circuit signals using circuit_utils (raw format)
+    local input_signals = circuit_utils.get_input_signals_raw(entity)
     if not input_signals then
         input_signals = {red = {}, green = {}}
     end
@@ -111,8 +111,8 @@ local function evaluate_and_update_statuses(player, chooser_data, entity)
     local green_signals = {}
 
     for _, sig_data in ipairs(input_signals.red or {}) do
-        if sig_data.signal_id then
-            local key = signal_utils.get_signal_key(sig_data.signal_id)
+        if sig_data.signal then
+            local key = signal_utils.get_signal_key(sig_data.signal)
             if key ~= "" then
                 red_signals[key] = sig_data.count
             end
@@ -120,8 +120,8 @@ local function evaluate_and_update_statuses(player, chooser_data, entity)
     end
 
     for _, sig_data in ipairs(input_signals.green or {}) do
-        if sig_data.signal_id then
-            local key = signal_utils.get_signal_key(sig_data.signal_id)
+        if sig_data.signal then
+            local key = signal_utils.get_signal_key(sig_data.signal)
             if key ~= "" then
                 green_signals[key] = sig_data.count
             end

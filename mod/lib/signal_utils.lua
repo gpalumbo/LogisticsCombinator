@@ -314,60 +314,124 @@ function signal_utils.count_signals(signals)
 end
 
 --[[
-  Convert signal_id to prototype object and quality for LuaPlayer.pipette()
+  Convert signal_id to prototype object
 
-  Gets the actual prototype object from game.item_prototypes/fluid_prototypes/entity_prototypes
-  for use with the pipette API.
+  Gets the actual prototype object from prototypes table for use with
+  various APIs (pipette, display, etc).
 
-  @param signal_id table: Signal identifier {type, name, quality?}
-  @return LuaPrototype|nil, string|nil: Prototype object and quality name, or nil if not pipettable
+  @param signal table: Signal identifier {type, name, quality?}
+  @return LuaPrototype|nil: Prototype object, or nil if not found
 
   BEHAVIOR:
-  - Returns actual prototype object from game.*_prototypes tables
+  - Returns actual prototype object from prototypes.* tables
   - Defaults to "item" if type is nil
-  - Returns nil for virtual signals (not pipettable)
-  - Returns quality as second return value
+  - Returns prototype for virtual signals (virtual_signal type)
+  - Quality is passed through if present on signal
 
   TYPE MAPPING:
-  - "item" → game.item_prototypes[name]
-  - "fluid" → game.fluid_prototypes[name]
-  - "entity" → game.entity_prototypes[name]
-  - "virtual-signal" → nil (not pipettable)
-  - nil → defaults to game.item_prototypes[name]
+  - "item" → prototypes.item[name]
+  - "fluid" → prototypes.fluid[name]
+  - "entity" → prototypes.entity[name]
+  - "virtual" → prototypes.virtual_signal[name]
+  - nil → defaults to prototypes.item[name]
 
   EXAMPLE:
-    signal_id = {type = "item", name = "iron-plate", quality = "uncommon"}
-    prototype, quality = signal_to_pipette_prototype(signal_id)
-    -- Returns: LuaItemPrototype["iron-plate"], "uncommon"
+    signal = {type = "item", name = "iron-plate"}
+    prototype = signal_to_prototype(signal)
+    -- Returns: LuaItemPrototype["iron-plate"]
 
-    virtual_signal = {type = "virtual-signal", name = "signal-A"}
-    prototype, quality = signal_to_pipette_prototype(virtual_signal)
-    -- Returns: nil, nil (virtual signals can't be pipetted)
+    virtual_signal = {type = "virtual", name = "signal-A"}
+    prototype = signal_to_prototype(virtual_signal)
+    -- Returns: LuaVirtualSignalPrototype["signal-A"]
 --]]
-function signal_utils.signal_to_pipette_prototype(signal_id)
-  
-
-  if not signal_id or not signal_id.name then
+function signal_utils.signal_to_prototype(signal)
+  if not signal or not signal.name then
     return nil
   end
 
   -- Default to "item" if type is nil
-  local signal_type = signal_id.type or "item"
+  local signal_type = signal.type or "item"
 
-  -- Virtual signals cannot be pipetted
+  -- Map "virtual" to "virtual_signal" for prototypes table
   if signal_type == "virtual" then
     signal_type = "virtual_signal"
   end
 
   -- Get the actual prototype object from the game
-  if(not prototypes[signal_type]) then
+  if not prototypes[signal_type] then
     return nil
   end
 
-  local prototype = prototypes[signal_type][signal_id.name]
+  local prototype = prototypes[signal_type][signal.name]
 
-  -- Return prototype and quality (quality can be nil)
   return prototype
+end
+
+-- Alias for backwards compatibility
+signal_utils.signal_to_pipette_prototype = signal_utils.signal_to_prototype
+
+--[[
+  Format signal for display in GUI
+
+  Creates a formatted string representation of a signal with its count.
+  Uses rich text format for display.
+
+  @param signal_data table: Signal data {signal = SignalID, count = integer}
+  @return string: Formatted signal string
+
+  EXAMPLE:
+    signal_data = {signal = {type = "item", name = "iron-plate"}, count = 100}
+    format_signal_for_display(signal_data)
+    -- Returns: "[item=iron-plate] x100"
+--]]
+function signal_utils.format_signal_for_display(signal_data)
+  if not signal_data or not signal_data.signal then
+    return "Invalid signal"
+  end
+
+  local signal = signal_data.signal
+  local signal_type = signal.type or "item"
+
+  return string.format("[%s=%s] x%d", signal_type, signal.name, signal_data.count)
+end
+
+--[[
+  Look up the item name that places a given entity
+
+  Entity names don't always match item names (e.g., "straight-rail" -> "rail")
+  Uses LuaEntityPrototype.items_to_place_this to find the correct item.
+
+  @param entity_name string: The entity prototype name (e.g., ghost_name)
+  @return string: The item name that places this entity (falls back to entity_name if not found)
+
+  EXAMPLE:
+    get_item_name_for_entity("straight-rail")
+    -- Returns: "rail"
+
+    get_item_name_for_entity("iron-chest")
+    -- Returns: "iron-chest"
+--]]
+function signal_utils.get_item_name_for_entity(entity_name)
+  if not entity_name then
+    return nil
+  end
+
+  -- Look up the entity prototype
+  local entity_proto = prototypes.entity[entity_name]
+  if not entity_proto then
+    -- Entity prototype not found, fall back to entity name
+    return entity_name
+  end
+
+  -- Check if items_to_place_this exists and has entries
+  -- Construction bots use the first item in this array
+  local items_to_place = entity_proto.items_to_place_this
+  if items_to_place and #items_to_place > 0 then
+    return items_to_place[1].name
+  end
+
+  -- No items_to_place_this defined, fall back to entity name
+  return entity_name
 end
 
 --------------------------------------------------------------------------------

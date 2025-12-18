@@ -21,7 +21,6 @@
 --
 -- DEPENDENCIES:
 --   - lib/logistics_utils.lua (low-level group operations)
---   - lib/circuit_utils.lua (finding connected entities)
 --
 -- USAGE PATTERN:
 --   1. Combinator determines which groups should be active
@@ -35,9 +34,148 @@
 -- =============================================================================
 
 local logistics_utils = require("lib.logistics_utils")
-local circuit_utils = require("lib.circuit_utils")
 
 local logistics_injection = {}
+
+-- =============================================================================
+-- CIRCUIT NETWORK TRAVERSAL (LOCAL HELPERS)
+-- =============================================================================
+
+--- Recursively find all entities connected to a specific wire connector
+--- @param entity LuaEntity: Starting entity
+--- @param wire_connector_id number: Connector ID to traverse from
+--- @param visited table: Internal - tracks visited connectors to prevent infinite loops
+--- @return table: Set of entities {[unit_number] = LuaEntity}
+---
+--- FACTORIO 2.0 API:
+---   - entity.get_wire_connector(wire_connector_id) returns LuaWireConnector
+---   - wire_connector.connections returns array of WireConnection objects
+---   - wire_connection.target is the connected LuaWireConnector
+---   - wire_connector.owner is the entity owning the connector
+---
+--- EDGE CASES:
+---   - Returns empty table if entity is invalid
+---   - Returns empty table if connector doesn't exist
+---   - Handles cyclic networks (prevents infinite recursion)
+---   - Includes the starting entity in results
+local function find_entities_on_connector(entity, wire_connector_id, visited)
+    visited = visited or {}
+    local entities = {}
+
+    if not entity or not entity.valid then
+        return entities
+    end
+
+    -- Get the wire connector (Factorio 2.0 API)
+    local connector = entity.get_wire_connector(wire_connector_id)
+    if not connector or not connector.valid then
+        return entities
+    end
+
+    -- Create unique key for this connector to prevent revisiting
+    local connector_key = string.format("%d_%d",
+        entity.unit_number or 0,
+        wire_connector_id)
+
+    if visited[connector_key] then
+        return entities  -- Already processed this connector
+    end
+    visited[connector_key] = true
+
+    -- Add the owner entity to results
+    if entity.unit_number then
+        entities[entity.unit_number] = entity
+    end
+
+    -- Traverse all connections from this connector
+    local connections = connector.connections
+    if not connections then
+        return entities
+    end
+
+    for _, wire_connection in pairs(connections) do
+        local target_connector = wire_connection.target
+        if target_connector and target_connector.valid then
+            local target_entity = target_connector.owner
+            if target_entity and target_entity.valid then
+                -- Recursively traverse from the target entity/connector
+                local target_connector_id = target_connector.wire_connector_id
+                local recursive_entities = find_entities_on_connector(
+                    target_entity,
+                    target_connector_id,
+                    visited
+                )
+
+                -- Merge results
+                for unit_number, ent in pairs(recursive_entities) do
+                    entities[unit_number] = ent
+                end
+            end
+        end
+    end
+
+    return entities
+end
+
+--- Find all logistics-capable entities on a combinator's output network
+--- @param combinator LuaEntity: The logistics combinator entity
+--- @return table: Array of entities with logistics capability
+---
+--- PURPOSE:
+---   Used by logistics combinator to find all entities it can control.
+---   Traverses both red and green output wire networks recursively.
+---
+--- LOGISTICS CAPABILITY:
+---   An entity has logistics capability if it has the logistic_sections property.
+---   Examples: cargo-landing-pad, space-platform-hub, inserters, assemblers, etc.
+---
+--- EDGE CASES:
+---   - Returns empty array if combinator is invalid
+---   - Returns empty array if no output wires connected
+---   - Deduplicates entities found on both red and green networks
+---   - Filters out entities without logistics capability
+---
+--- FACTORIO 2.0 API:
+---   - Uses defines.wire_connector_id.combinator_output_red/green
+---   - Checks entity.get_requester_point() for logistics capability
+local function find_logistics_entities_on_output(combinator)
+    if not combinator or not combinator.valid then
+        return {}
+    end
+
+    local all_entities = {}
+    local logistics_entities = {}
+
+    -- Check both red and green output connectors
+    local output_connectors = {
+        defines.wire_connector_id.combinator_output_red,
+        defines.wire_connector_id.combinator_output_green
+    }
+
+    for _, connector_id in ipairs(output_connectors) do
+        local entities_on_network = find_entities_on_connector(combinator, connector_id)
+
+        -- Merge into all_entities (deduplicates by unit_number)
+        for unit_number, entity in pairs(entities_on_network) do
+            all_entities[unit_number] = entity
+        end
+    end
+
+    -- Filter for logistics capability
+    for unit_number, entity in pairs(all_entities) do
+        if entity.valid then
+            -- Check if entity has a requester point (logistics capability)
+            -- This is the correct Factorio 2.0 API method
+            local requester_point = entity.get_requester_point()
+
+            if requester_point ~= nil then
+                table.insert(logistics_entities, entity)
+            end
+        end
+    end
+
+    return logistics_entities
+end
 
 -- =============================================================================
 -- CONNECTED ENTITY MANAGEMENT
@@ -56,10 +194,8 @@ function logistics_injection.update_connected_entities(combinator_entity)
         return {}
     end
 
-    -- Use circuit_utils to find logistics-capable entities on output
-    local logistics_entities = circuit_utils.find_logistics_entities_on_output(combinator_entity)
-
-    return logistics_entities
+    -- Find logistics-capable entities on output circuit network
+    return find_logistics_entities_on_output(combinator_entity)
 end
 
 -- =============================================================================

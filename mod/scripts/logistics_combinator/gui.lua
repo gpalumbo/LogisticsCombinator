@@ -143,8 +143,8 @@ local function evaluate_and_update_indicator(player, entity)
     local combinator_data = globals.get_logistics_combinator_data(entity)
     if not combinator_data then return false end
 
-    -- Get input signals
-    local input_signals = circuit_utils.get_input_signals(entity, "combinator_input")
+    -- Get input signals (raw format)
+    local input_signals = circuit_utils.get_input_signals_raw(entity)
     if not input_signals then
         input_signals = {red = {}, green = {}}
     end
@@ -154,8 +154,8 @@ local function evaluate_and_update_indicator(player, entity)
     local green_signals = {}
 
     for _, sig_data in ipairs(input_signals.red or {}) do
-        if sig_data.signal_id then
-            local key = signal_utils.get_signal_key(sig_data.signal_id)
+        if sig_data.signal then
+            local key = signal_utils.get_signal_key(sig_data.signal)
             if key ~= "" then
                 red_signals[key] = sig_data.count
             end
@@ -163,8 +163,8 @@ local function evaluate_and_update_indicator(player, entity)
     end
 
     for _, sig_data in ipairs(input_signals.green or {}) do
-        if sig_data.signal_id then
-            local key = signal_utils.get_signal_key(sig_data.signal_id)
+        if sig_data.signal then
+            local key = signal_utils.get_signal_key(sig_data.signal)
             if key ~= "" then
                 green_signals[key] = sig_data.count
             end

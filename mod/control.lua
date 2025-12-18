@@ -4,10 +4,8 @@
 -- Import utility libraries (stateless)
 local signal_utils = require("lib.signal_utils")
 local circuit_utils = require("lib.circuit_utils")
-local platform_utils = require("lib.platform_utils")
 local logistics_utils = require("lib.logistics_utils")
 local gui_utils = require("lib.gui_utils")
--- Note: validation.lua is deprecated in favor of tile_buildability_rules
 
 -- Import script modules (stateful)
 local globals = require("scripts.globals")

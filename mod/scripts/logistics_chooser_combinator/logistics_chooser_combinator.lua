@@ -61,8 +61,8 @@ function logistics_chooser.process_groups(unit_number)
         return
     end
 
-    -- 1. Read input signals from both red and green wires
-    local input_signals = circuit_utils.get_input_signals(entity, "combinator_input")
+    -- 1. Read input signals from both red and green wires (raw format)
+    local input_signals = circuit_utils.get_input_signals_raw(entity)
     if not input_signals then
         return
     end
@@ -72,8 +72,8 @@ function logistics_chooser.process_groups(unit_number)
     local green_signals = {}
 
     for _, sig_data in ipairs(input_signals.red or {}) do
-        if sig_data.signal_id then
-            local key = signal_utils.get_signal_key(sig_data.signal_id)
+        if sig_data.signal then
+            local key = signal_utils.get_signal_key(sig_data.signal)
             if key ~= "" then
                 red_signals[key] = sig_data.count
             end
@@ -81,8 +81,8 @@ function logistics_chooser.process_groups(unit_number)
     end
 
     for _, sig_data in ipairs(input_signals.green or {}) do
-        if sig_data.signal_id then
-            local key = signal_utils.get_signal_key(sig_data.signal_id)
+        if sig_data.signal then
+            local key = signal_utils.get_signal_key(sig_data.signal)
             if key ~= "" then
                 green_signals[key] = sig_data.count
             end
