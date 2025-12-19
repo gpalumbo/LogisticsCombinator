@@ -1,4 +1,12 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.3.0
+Date: 2025-12-18
+  Bug Fix:
+    - properly compare signals with quality (previously ignored quality when matching signals.  
+      May be breaking for some)
+  Internal update:
+    - synced library functions for consideration of pulling out into shared mod
+---------------------------------------------------------------------------------------------------
 Version: 0.2.4
 Date: 2025-12-12
   Bug Fixes:

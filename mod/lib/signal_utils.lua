@@ -41,25 +41,31 @@ local signal_utils = {}
 --[[
   HELPER: Convert signal_id to string key for comparison
   Signal IDs are tables, so we need string keys for equality checks
+  In Factorio 2.0, signals also have quality (defaults to "normal")
 
-  @param signal_id table: Signal identifier {type, name}
-  @return string: Unique string key for this signal
+  @param signal_id table: Signal identifier {type, name, quality?}
+  @return string: Unique string key for this signal (format: "type:name:quality")
 --]]
 local function signal_to_key(signal_id)
   if not signal_id then return nil end
-  return signal_id.type .. ":" .. signal_id.name
+  local signal_type = signal_id.type or "item"
+  local quality = signal_id.quality or "normal"
+  return signal_type .. ":" .. signal_id.name .. ":" .. quality
 end
 
 --[[
   HELPER: Check if two signal_ids are equal
+  In Factorio 2.0, signals also have quality (defaults to "normal")
 
-  @param a table: First signal_id {type, name}
-  @param b table: Second signal_id {type, name}
-  @return boolean: True if both represent the same signal
+  @param a table: First signal_id {type, name, quality?}
+  @param b table: Second signal_id {type, name, quality?}
+  @return boolean: True if both represent the same signal (including quality)
 --]]
 local function signal_ids_equal(a, b)
   if not a or not b then return false end
-  return a.type == b.type and a.name == b.name
+  local a_quality = a.quality or "normal"
+  local b_quality = b.quality or "normal"
+  return a.type == b.type and a.name == b.name and a_quality == b_quality
 end
 
 --------------------------------------------------------------------------------
@@ -478,13 +484,20 @@ end
 
 --- Get signal key for table lookup
 -- Converts signal definition to string key for consistent lookups
--- @param signal table: {type = "item"|"fluid"|"virtual", name = "signal-name"}
--- @return string: Key for signal table lookup (format: "type:name")
-function signal_utils.get_signal_key(signal)
+-- In Factorio 2.0, signals also have quality (defaults to "normal")
+-- @param signal table: {type = "item"|"fluid"|"virtual", name = "signal-name", quality? = "normal"|"uncommon"|"rare"|"epic"|"legendary"}
+-- @param ignore_quality boolean: If true, exclude quality from key (default: false)
+-- @return string: Key for signal table lookup (format: "type:name:quality" or "type:name" if ignore_quality)
+function signal_utils.get_signal_key(signal, ignore_quality)
   if not signal or not signal.name then return "" end
   local signal_type = signal.type or "item"  -- Default to "item" if type not specified
-  -- Use type:name format to distinguish between item/fluid/virtual signals with same name
-  return signal_type .. ":" .. signal.name
+  if ignore_quality then
+    -- Use type:name format only (ignores quality differences)
+    return signal_type .. ":" .. signal.name
+  end
+  local quality = signal.quality or "normal"  -- Default to "normal" if quality not specified
+  -- Use type:name:quality format to distinguish signals with different qualities
+  return signal_type .. ":" .. signal.name .. ":" .. quality
 end
 
 --- Compare two values with an operator
