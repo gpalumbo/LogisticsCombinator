@@ -2,8 +2,9 @@
 Version: 0.3.0
 Date: 2025-12-18
   Bug Fix:
-    - properly compare signals with quality (previously ignored quality when matching signals.  
+    - Properly compare signals with quality (previously ignored quality when matching signals.  
       May be breaking for some)
+    - When reslecting blueprint contents, we referneced the original not the new contents.
   Internal update:
     - synced library functions for consideration of pulling out into shared mod
 ---------------------------------------------------------------------------------------------------
