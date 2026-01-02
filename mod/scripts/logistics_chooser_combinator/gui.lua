@@ -630,7 +630,7 @@ function logistics_chooser_gui.create_gui(player, entity)
     -- Initialize mode switch state from storage
     local chooser_data = globals.get_logistics_chooser_data(entity)
     if chooser_data then
-        local mode_switch = refs[GUI_NAMES.MAIN_FRAME][GUI_NAMES.MODE_SWITCH]
+        local mode_switch = gui_utils.find_child_recursive(refs[GUI_NAMES.MAIN_FRAME], GUI_NAMES.MODE_SWITCH)
         if mode_switch and mode_switch.valid then
             -- Default mode is "each"
             local mode = chooser_data.mode or "each"
