@@ -137,7 +137,8 @@ end
 ---
 --- FACTORIO 2.0 API:
 ---   - Uses defines.wire_connector_id.combinator_output_red/green
----   - Checks entity.get_requester_point() for logistics capability
+---   - Uses logistics_utils.get_section_manager() for logistics capability
+---   - This handles requester_point AND control_behavior.sections entities
 local function find_logistics_entities_on_output(combinator)
     if not combinator or not combinator.valid then
         return {}
@@ -164,11 +165,12 @@ local function find_logistics_entities_on_output(combinator)
     -- Filter for logistics capability
     for unit_number, entity in pairs(all_entities) do
         if entity.valid then
-            -- Check if entity has a requester point (logistics capability)
-            -- This is the correct Factorio 2.0 API method
-            local requester_point = entity.get_requester_point()
+            -- Check if entity has logistics capability using get_section_manager
+            -- This handles both requester_point entities AND control_behavior.sections
+            -- (e.g., constant combinators and other entities with logistics sections)
+            local section_manager = logistics_utils.get_section_manager(entity)
 
-            if requester_point ~= nil then
+            if section_manager ~= nil then
                 table.insert(logistics_entities, entity)
             end
         end
